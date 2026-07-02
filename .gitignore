@@ -1,0 +1,27 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+data
+
+# Local machine config
+.env
+.env.docker
+.logfire
+
+# Next.js frontend
+frontend/node_modules
+frontend/.next
+frontend/.env.local
+
+docs_internal
+
+# Eval run artifacts (ground truth stays trackable; results are per-run)
+eval_data/results-*.jsonl

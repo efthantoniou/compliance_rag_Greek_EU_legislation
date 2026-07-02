@@ -1,0 +1,12 @@
+.venv
+__pycache__
+*.pyc
+.git
+.pytest_cache
+data
+frontend
+docs
+.logfire
+.env
+.env.docker
+*.md

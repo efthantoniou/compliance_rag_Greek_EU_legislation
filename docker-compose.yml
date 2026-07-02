@@ -1,0 +1,100 @@
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v3.1.5
+    # Run as the host user that owns ./data (the image defaults to uid 65532
+    # "nonroot", which cannot write to the bind-mounted corpus).
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    command: start --user ${SURREALDB_USER:-root} --pass ${SURREALDB_PASS:-root} --bind 0.0.0.0:8000 surrealkv:///data/surreal.db
+    volumes:
+      - ./data:/data
+    # ports:
+    #   - "8000:8000"   # uncomment to inspect SurrealDB directly
+    networks: [rag-net]
+
+  llama:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    command: >
+      -m /models/${LLAMACPP_MODEL_FILE}
+      --host 0.0.0.0 --port 8080
+      --ctx-size 32768 --n-gpu-layers -1
+    volumes:
+      - ${LLAMA_MODELS_DIR}:/models:ro
+    # ports:
+    #   - "8080:8080"   # uncomment to inspect llama.cpp directly
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks: [rag-net]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      SURREALDB_URL: ws://surrealdb:8000/rpc
+      SURREALDB_USER: ${SURREALDB_USER:-root}
+      SURREALDB_PASS: ${SURREALDB_PASS:-root}
+      LLAMACPP_URL: http://llama:8080/v1
+      LLAMACPP_MODEL: /models/${LLAMACPP_MODEL_FILE}
+      HF_HOME: /hf-cache
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      LOGFIRE_TOKEN: ${LOGFIRE_TOKEN:-}
+    volumes:
+      - ${HF_CACHE_DIR}:/hf-cache
+    ports:
+      - "9000:9000"
+    depends_on: [surrealdb, llama]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks: [rag-net]
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      BACKEND_URL: http://backend:9000
+    ports:
+      - "3000:3000"
+    depends_on: [backend]
+    networks: [rag-net]
+
+  ingest:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    profiles: [ingest]
+    environment:
+      SURREALDB_URL: ws://surrealdb:8000/rpc
+      SURREALDB_USER: ${SURREALDB_USER:-root}
+      SURREALDB_PASS: ${SURREALDB_PASS:-root}
+      LLAMACPP_URL: http://llama:8080/v1
+      LLAMACPP_MODEL: /models/${LLAMACPP_MODEL_FILE}
+      HF_HOME: /hf-cache
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - ${HF_CACHE_DIR}:/hf-cache
+    depends_on: [surrealdb]
+    command: ["python", "main.py", "ingest"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks: [rag-net]
+
+networks:
+  rag-net:
+    driver: bridge
