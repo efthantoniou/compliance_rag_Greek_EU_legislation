@@ -1,4 +1,9 @@
-export type SseEvent = { type: string; data: any };
+export type SseEvent =
+  | { type: "status"; data: { phase: string } }
+  | { type: "tool"; data: { query: string } }
+  | { type: "token"; data: { text: string } }
+  | { type: "error"; data: { message: string } }
+  | { type: "done"; data: Record<string, never> };
 
 export async function* parseSse(response: Response): AsyncGenerator<SseEvent> {
   const reader = response.body!.getReader();
@@ -22,7 +27,7 @@ export async function* parseSse(response: Response): AsyncGenerator<SseEvent> {
         else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
       }
       if (dataLines.length === 0) continue;
-      yield { type: eventType, data: JSON.parse(dataLines.join("\n")) };
+      yield { type: eventType, data: JSON.parse(dataLines.join("\n")) } as SseEvent;
     }
   }
 }

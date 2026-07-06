@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,9 +14,16 @@ export default function AskView() {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Abort any in-flight stream if the component unmounts (e.g. tab switch).
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function ask() {
     if (!question.trim()) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(true);
     setError(null);
     setSearches([]);
@@ -27,6 +34,7 @@ export default function AskView() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ question }),
+        signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
       for await (const event of parseSse(res)) {
@@ -37,10 +45,14 @@ export default function AskView() {
         else if (event.type === "done") setPhase(null);
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Request failed");
     } finally {
-      setBusy(false);
-      setPhase(null);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setBusy(false);
+        setPhase(null);
+      }
     }
   }
 

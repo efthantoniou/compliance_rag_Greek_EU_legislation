@@ -12,22 +12,45 @@ export function HealthBadge() {
 
   useEffect(() => {
     let active = true;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
     async function check() {
       try {
         const res = await fetch("/api/health", { cache: "no-store" });
         const data = (await res.json()) as Health;
-        if (active) {
-          setHealth(data);
-        }
+        if (active) setHealth(data);
       } catch {
         if (active) setHealth({ surrealdb: false, llamacpp: false });
       }
     }
-    check();
-    const id = setInterval(check, POLL_INTERVAL_MS);
+
+    function startPolling() {
+      if (intervalId !== undefined) return;
+      check(); // immediate check whenever polling (re)starts
+      intervalId = setInterval(check, POLL_INTERVAL_MS);
+    }
+
+    function stopPolling() {
+      if (intervalId !== undefined) {
+        clearInterval(intervalId);
+        intervalId = undefined;
+      }
+    }
+
+    // Only poll while the tab is visible: pause when it's hidden and re-check
+    // immediately when the user returns, so we never waste background requests.
+    function handleVisibility() {
+      if (document.visibilityState === "visible") startPolling();
+      else stopPolling();
+    }
+
+    if (document.visibilityState === "visible") startPolling();
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
       active = false;
-      clearInterval(id);
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
 
