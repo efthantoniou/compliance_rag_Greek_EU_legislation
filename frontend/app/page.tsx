@@ -1,6 +1,3 @@
-"use client";
-
-import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import SearchView from "@/components/search-view";
 import AskView from "@/components/ask-view";

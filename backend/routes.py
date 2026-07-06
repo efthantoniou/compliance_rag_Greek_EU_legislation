@@ -91,6 +91,12 @@ def _sse_response(agent, prompt, deps) -> StreamingResponse:
     return StreamingResponse(
         agent_sse_events(agent, prompt, deps),
         media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # Disable proxy buffering (nginx and Next's dev proxy) so tokens
+            # flush to the client as they stream instead of in one batch.
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

@@ -250,7 +250,6 @@ uv run pytest -m integration  # requires a live SurrealDB at SURREALDB_URL
 - **A schema/chunking change requires a re-ingest.** `reset_schema` drops and recreates
   the `chunk` table (including the HNSW and BM25 indexes), so re-running `ingest` fully
   replaces the corpus — no migration needed.
-- **`ask` is single-turn** today. Multi-turn chat, citation validation, incremental
-  ingest, and richer label filtering are tracked in `docs_internal/ideas.md`.
+- **`ask` is single-turn** today.
 - If SurrealDB logs `Permission denied` on `./data`, set `HOST_UID`/`HOST_GID` in
   `.env.docker` to your `id -u` / `id -g`.

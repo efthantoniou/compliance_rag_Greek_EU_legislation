@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ResultCard, type SearchResult } from "@/components/result-card";
@@ -10,9 +10,15 @@ export default function SearchView() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function runSearch() {
     if (!query.trim()) return;
+    // Cancel any in-flight request so a slower earlier search can't overwrite
+    // the results of a newer one.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -20,14 +26,19 @@ export default function SearchView() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ query, top_k: 5 }),
+        signal: controller.signal,
       });
       if (!res.ok) throw new Error(`Search failed (${res.status})`);
       const data = await res.json();
       setResults(data.results);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Search failed");
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
