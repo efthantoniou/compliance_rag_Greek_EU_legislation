@@ -25,3 +25,4 @@ docs_internal
 
 # Eval run artifacts (ground truth stays trackable; results are per-run)
 eval_data/results-*.jsonl
+docs/superpowers/
