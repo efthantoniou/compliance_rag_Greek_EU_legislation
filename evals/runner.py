@@ -1,32 +1,17 @@
+import asyncio
 import json
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
 import click
-from pydantic_ai.messages import ToolReturnPart
 
-from agent import AgentDeps, build_ask_agent
+from agent import AgentDeps
+from agent.core.loop import collect_answer_and_sources
 from config import Config
 from evals.judge import judge_answer
 
 _SCORE_KEYS = ("factual_correctness", "completeness", "citation_quality", "no_hedging")
-
-
-def _retrieved_celex_ids(messages) -> list[str]:
-    ids: list[str] = []
-    for message in messages:
-        for part in getattr(message, "parts", []):
-            if not isinstance(part, ToolReturnPart):
-                continue
-            content = part.content if isinstance(part.content, list) else []
-            for item in content:
-                celex = getattr(item, "celex_id", None) or (
-                    item.get("celex_id") if isinstance(item, dict) else None
-                )
-                if celex and celex not in ids:
-                    ids.append(celex)
-    return ids
 
 
 def run_eval(
@@ -46,16 +31,16 @@ def run_eval(
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    agent = build_ask_agent(config)
     deps = AgentDeps(config=config, embedder=embedder, rerank=rerank)
     results: list[dict] = []
     with output_path.open("w", encoding="utf-8") as f:
         for qa in qa_pairs:
             try:
-                run = agent.run_sync(qa["question"], deps=deps)
-                sources = _retrieved_celex_ids(run.all_messages())
+                answer, sources = asyncio.run(
+                    collect_answer_and_sources(config, deps, qa["question"], "ask")
+                )
                 judgement = judge_answer(
-                    config, qa["question"], qa["expected_answer"], run.output, sources
+                    config, qa["question"], qa["expected_answer"], answer, sources
                 )
                 record = {
                     "ground_truth_id": qa["id"],
@@ -63,7 +48,7 @@ def run_eval(
                     "difficulty": qa.get("difficulty"),
                     "question": qa["question"],
                     "expected_answer": qa["expected_answer"],
-                    "rag_answer": run.output,
+                    "rag_answer": answer,
                     "rag_sources": sources,
                     "retrieval_hit": qa["celex_id"] in sources,
                     "scores": judgement.scores.model_dump(),

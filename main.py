@@ -1,10 +1,12 @@
+import asyncio
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 import click
 
-from agent import AgentDeps, build_ask_agent, build_check_agent, eurovoc
+from agent import AgentDeps, eurovoc
+from agent.core.loop import Token, prompted_events
 from agent.ingestion.chunking import chunk_document
 from agent.ingestion.embeddings import Embedder
 from agent.ingestion.loader import load_documents
@@ -89,6 +91,14 @@ def search_command(query, top_k, label):
         click.echo(chunk.text[:300])
 
 
+async def _collect_prompted_answer(config, deps, prompt, kind) -> str:
+    parts: list[str] = []
+    async for event in prompted_events(config, deps, prompt, kind):
+        if isinstance(event, Token):
+            parts.append(event.text)
+    return "".join(parts)
+
+
 def _check_llamacpp_reachable(config) -> None:
     try:
         urllib.request.urlopen(f"{config.llamacpp_url}/models", timeout=3)
@@ -105,9 +115,8 @@ def ask(question):
     _check_llamacpp_reachable(config)
     embedder = Embedder.from_pretrained()
     deps = AgentDeps(config=config, embedder=embedder)
-    agent = build_ask_agent(config)
-    result = agent.run_sync(question, deps=deps)
-    click.echo(result.output)
+    answer = asyncio.run(_collect_prompted_answer(config, deps, question, "ask"))
+    click.echo(answer)
 
 
 @cli.command(name="eval-generate")
@@ -151,9 +160,8 @@ def check(file):
         document_text = f.read()
     embedder = Embedder.from_pretrained()
     deps = AgentDeps(config=config, embedder=embedder)
-    agent = build_check_agent(config)
-    result = agent.run_sync(document_text, deps=deps)
-    click.echo(result.output)
+    answer = asyncio.run(_collect_prompted_answer(config, deps, document_text, "check"))
+    click.echo(answer)
 
 
 if __name__ == "__main__":

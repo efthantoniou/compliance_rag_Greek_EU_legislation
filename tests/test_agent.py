@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 from pydantic_ai import Agent
 
-from agent import AgentDeps, build_ask_agent, build_check_agent, search_regulations
+from agent import AgentDeps, search_regulations
 from config import Config
 from models import Chunk
 
@@ -33,11 +33,10 @@ def test_search_regulations_delegates_to_retrieval_search():
     assert result == fake_chunks
 
 
-def test_build_ask_agent_returns_agent_instance():
-    agent = build_ask_agent(_test_config())
-    assert isinstance(agent, Agent)
+def test_build_planner_and_writer_agents():
+    from agent.core.factory import build_planner_agent, build_writer_agent
 
-
-def test_build_check_agent_returns_agent_instance():
-    agent = build_check_agent(_test_config())
-    assert isinstance(agent, Agent)
+    planner = build_planner_agent(_test_config(), "plan instructions")
+    writer = build_writer_agent(_test_config(), "write instructions")
+    assert isinstance(planner, Agent)
+    assert isinstance(writer, Agent)

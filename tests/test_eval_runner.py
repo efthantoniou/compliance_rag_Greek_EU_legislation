@@ -1,12 +1,9 @@
 import json
-from unittest.mock import MagicMock, patch
-
-from pydantic_ai.messages import ToolReturnPart
+from unittest.mock import patch
 
 from config import Config
 from evals.judge import JudgeResult, JudgeScores
-from evals.runner import _retrieved_celex_ids, run_eval
-from models import Chunk
+from evals.runner import run_eval
 
 
 def _fake_config() -> Config:
@@ -22,30 +19,6 @@ def _fake_config() -> Config:
     )
 
 
-def _tool_message(chunks):
-    message = MagicMock()
-    message.parts = [
-        ToolReturnPart(
-            tool_name="_search_regulations_tool",
-            content=chunks,
-            tool_call_id="tc-1",
-        )
-    ]
-    return message
-
-
-def test_retrieved_celex_ids_dedupes_across_messages():
-    messages = [
-        _tool_message([Chunk(text="a", celex_id="A1", labels=[])]),
-        _tool_message([
-            Chunk(text="b", celex_id="A1", labels=[]),
-            Chunk(text="c", celex_id="B2", labels=[]),
-        ]),
-    ]
-
-    assert _retrieved_celex_ids(messages) == ["A1", "B2"]
-
-
 def test_run_eval_writes_results_with_retrieval_hit(tmp_path):
     gt = tmp_path / "gt.jsonl"
     gt.write_text(
@@ -55,13 +28,10 @@ def test_run_eval_writes_results_with_retrieval_hit(tmp_path):
         }) + "\n",
         encoding="utf-8",
     )
-    fake_run = MagicMock()
-    fake_run.output = "the answer"
-    fake_run.all_messages.return_value = [
-        _tool_message([Chunk(text="a", celex_id="A1", labels=[])])
-    ]
-    fake_agent = MagicMock()
-    fake_agent.run_sync.return_value = fake_run
+
+    async def fake_collect(config, deps, question, kind):
+        return "the answer", ["A1"]
+
     judgement = JudgeResult(
         scores=JudgeScores(
             factual_correctness=1.0, completeness=0.8,
@@ -72,7 +42,7 @@ def test_run_eval_writes_results_with_retrieval_hit(tmp_path):
     )
     out = tmp_path / "results.jsonl"
 
-    with patch("evals.runner.build_ask_agent", return_value=fake_agent), \
+    with patch("evals.runner.collect_answer_and_sources", fake_collect), \
          patch("evals.runner.judge_answer", return_value=judgement):
         result_path = run_eval(
             _fake_config(), embedder=object(), ground_truth_path=gt, output_path=out
@@ -83,3 +53,4 @@ def test_run_eval_writes_results_with_retrieval_hit(tmp_path):
     assert records[0]["retrieval_hit"] is True
     assert records[0]["verdict"] == "correct"
     assert records[0]["rag_sources"] == ["A1"]
+    assert records[0]["rag_answer"] == "the answer"

@@ -41,3 +41,17 @@ def test_load_config_requires_llamacpp_model(monkeypatch):
 
     with pytest.raises(RuntimeError):
         load_config()
+
+
+def test_max_search_iters_default(monkeypatch):
+    monkeypatch.setenv("LLAMACPP_MODEL", "test-model")
+    monkeypatch.delenv("MAX_SEARCH_ITERS", raising=False)
+    cfg = load_config()
+    assert cfg.max_search_iters == 5
+
+
+def test_max_search_iters_from_env(monkeypatch):
+    monkeypatch.setenv("LLAMACPP_MODEL", "test-model")
+    monkeypatch.setenv("MAX_SEARCH_ITERS", "8")
+    cfg = load_config()
+    assert cfg.max_search_iters == 8
