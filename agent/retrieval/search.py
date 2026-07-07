@@ -24,7 +24,11 @@ def _row_to_chunk(row: dict) -> Chunk:
     return Chunk(
         text=row["text"],
         celex_id=row["celex_id"],
-        labels=row["labels"],
+        # `or []` guards against rows from an older schema where these come back
+        # as NULL rather than an empty array.
+        labels=row.get("labels") or [],
+        labels_l2=row.get("labels_l2") or [],
+        labels_l3=row.get("labels_l3") or [],
         chunk_index=row.get("chunk_index", 0),
     )
 

@@ -41,6 +41,8 @@ def _make_chunk(doc: Document, paragraphs: list[str], index: int) -> Chunk:
         text="\n\n".join(paragraphs),
         celex_id=doc.celex_id,
         labels=doc.labels,
+        labels_l2=doc.labels_l2,
+        labels_l3=doc.labels_l3,
         chunk_index=index,
     )
 

@@ -61,6 +61,9 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        # Baked into the Next.js rewrite at build time (rewrites are static).
+        BACKEND_URL: http://backend:9000
     environment:
       BACKEND_URL: http://backend:9000
     ports:

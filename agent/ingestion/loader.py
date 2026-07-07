@@ -8,7 +8,6 @@ from models import Document
 REPO_ID = "nlpaueb/multi_eurlex"
 ZIP_FILENAME = "multi_eurlex_translated.zip"
 LANGUAGE = "el"
-LABEL_LEVEL = "level_1"
 
 
 def load_documents(limit: int | None) -> list[Document]:
@@ -23,9 +22,12 @@ def load_documents(limit: int | None) -> list[Document]:
                 text = row["text"].get(LANGUAGE)
                 if not text:
                     continue
+                concepts = row["eurovoc_concepts"]
                 documents.append(Document(
                     celex_id=row["celex_id"],
                     text=text,
-                    labels=row["eurovoc_concepts"][LABEL_LEVEL],
+                    labels=concepts.get("level_1", []),
+                    labels_l2=concepts.get("level_2", []),
+                    labels_l3=concepts.get("level_3", []),
                 ))
     return documents

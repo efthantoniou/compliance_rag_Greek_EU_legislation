@@ -54,6 +54,8 @@ def reset_schema(config: Config) -> None:
     _run_query(config, f"DEFINE FIELD text ON {TABLE} TYPE string;")
     _run_query(config, f"DEFINE FIELD celex_id ON {TABLE} TYPE string;")
     _run_query(config, f"DEFINE FIELD labels ON {TABLE} TYPE array<string>;")
+    _run_query(config, f"DEFINE FIELD labels_l2 ON {TABLE} TYPE array<string>;")
+    _run_query(config, f"DEFINE FIELD labels_l3 ON {TABLE} TYPE array<string>;")
     _run_query(config, f"DEFINE FIELD chunk_index ON {TABLE} TYPE int;")
     _run_query(config, f"DEFINE FIELD embedding ON {TABLE} TYPE array<float>;")
     _run_query(
@@ -82,6 +84,8 @@ def insert_chunks(config: Config, chunks: list[Chunk], embeddings: list[list[flo
             "text": chunk.text,
             "celex_id": chunk.celex_id,
             "labels": chunk.labels,
+            "labels_l2": chunk.labels_l2,
+            "labels_l3": chunk.labels_l3,
             "chunk_index": chunk.chunk_index,
             "embedding": embedding,
         }
@@ -104,7 +108,7 @@ def list_celex_ids(config: Config) -> list[str]:
 
 def chunks_by_celex(config: Config, celex_id: str, limit: int = 20) -> list[dict]:
     sql = (
-        f"SELECT text, celex_id, labels, chunk_index FROM {TABLE} "
+        f"SELECT text, celex_id, labels, labels_l2, labels_l3, chunk_index FROM {TABLE} "
         f"WHERE celex_id = $celex_id ORDER BY chunk_index LIMIT {int(limit)};"
     )
     return _run_query(config, sql, {"celex_id": celex_id})
@@ -122,7 +126,7 @@ def fts_search(
         where += " AND $label IN labels"
         query_vars["label"] = label_filter
     sql = (
-        f"SELECT id, text, celex_id, labels, chunk_index, "
+        f"SELECT id, text, celex_id, labels, labels_l2, labels_l3, chunk_index, "
         f"search::score(1) AS score "
         f"FROM {TABLE} WHERE {where} ORDER BY score DESC LIMIT {int(top_k)};"
     )
@@ -141,7 +145,7 @@ def vector_search(
         where += " AND $label IN labels"
         query_vars["label"] = label_filter
     sql = (
-        f"SELECT id, text, celex_id, labels, chunk_index, "
+        f"SELECT id, text, celex_id, labels, labels_l2, labels_l3, chunk_index, "
         f"vector::distance::knn() AS distance "
         f"FROM {TABLE} WHERE {where} ORDER BY distance;"
     )

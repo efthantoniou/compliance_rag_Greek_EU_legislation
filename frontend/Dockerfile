@@ -4,6 +4,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# Next.js bakes rewrites() destinations at build time, so the backend URL must
+# be present here (not just at runtime) for the /api proxy to target the right host.
+ARG BACKEND_URL=http://localhost:9000
+ENV BACKEND_URL=$BACKEND_URL
 RUN npm run build
 
 # --- run stage ---

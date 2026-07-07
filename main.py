@@ -4,7 +4,7 @@ from pathlib import Path
 
 import click
 
-from agent import AgentDeps, build_ask_agent, build_check_agent
+from agent import AgentDeps, build_ask_agent, build_check_agent, eurovoc
 from agent.ingestion.chunking import chunk_document
 from agent.ingestion.embeddings import Embedder
 from agent.ingestion.loader import load_documents
@@ -84,7 +84,8 @@ def search_command(query, top_k, label):
         click.echo("No relevant passages found.")
         return
     for i, chunk in enumerate(results, start=1):
-        click.echo(f"\n[{i}] celex_id={chunk.celex_id} labels={chunk.labels}")
+        domains = ", ".join(c["el"] for c in eurovoc.concepts(chunk.labels))
+        click.echo(f"\n[{i}] celex_id={chunk.celex_id} [{domains}]")
         click.echo(chunk.text[:300])
 
 
