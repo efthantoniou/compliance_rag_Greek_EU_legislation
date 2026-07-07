@@ -25,7 +25,7 @@ from backend.schemas import (  # noqa: E402
     SearchResponse,
     SearchResult,
 )
-from backend.streaming import agent_sse_events  # noqa: E402
+from backend.streaming import prompted_sse_events  # noqa: E402
 
 router = APIRouter(prefix="/api")
 
@@ -106,9 +106,9 @@ async def search_endpoint(payload: SearchRequest, request: Request) -> SearchRes
     )
 
 
-def _sse_response(agent, prompt, deps) -> StreamingResponse:
+def _sse_response(config, deps, prompt, kind) -> StreamingResponse:
     return StreamingResponse(
-        agent_sse_events(agent, prompt, deps),
+        prompted_sse_events(config, deps, prompt, kind),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -123,15 +123,13 @@ def _sse_response(agent, prompt, deps) -> StreamingResponse:
 async def ask_endpoint(payload: AskRequest, request: Request) -> StreamingResponse:
     config = request.app.state.config
     embedder = request.app.state.embedder
-    agent = request.app.state.ask_agent
     deps = AgentDeps(config=config, embedder=embedder)
-    return _sse_response(agent, payload.question, deps)
+    return _sse_response(config, deps, payload.question, "ask")
 
 
 @router.post("/check")
 async def check_endpoint(payload: CheckRequest, request: Request) -> StreamingResponse:
     config = request.app.state.config
     embedder = request.app.state.embedder
-    agent = request.app.state.check_agent
     deps = AgentDeps(config=config, embedder=embedder)
-    return _sse_response(agent, payload.document, deps)
+    return _sse_response(config, deps, payload.document, "check")

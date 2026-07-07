@@ -17,6 +17,7 @@ services:
       -m /models/${LLAMACPP_MODEL_FILE}
       --host 0.0.0.0 --port 8080
       --ctx-size 32768 --n-gpu-layers -1
+      --jinja
     volumes:
       - ${LLAMA_MODELS_DIR}:/models:ro
     # ports:
@@ -40,9 +41,11 @@ services:
       SURREALDB_PASS: ${SURREALDB_PASS:-root}
       LLAMACPP_URL: http://llama:8080/v1
       LLAMACPP_MODEL: /models/${LLAMACPP_MODEL_FILE}
+      MAX_SEARCH_ITERS: ${MAX_SEARCH_ITERS:-5}
       HF_HOME: /hf-cache
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # Embedder + reranker run on CPU so the whole GPU is free for llama.cpp.
+      # (llama.cpp runs in its own container; the backend never needs CUDA.)
+      CUDA_VISIBLE_DEVICES: ""
       LOGFIRE_TOKEN: ${LOGFIRE_TOKEN:-}
     volumes:
       - ${HF_CACHE_DIR}:/hf-cache

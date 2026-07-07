@@ -18,6 +18,7 @@ class Config:
     ingest_limit: int
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     reranker_device: str = "cpu"
+    max_search_iters: int = 5
 
 
 def load_config() -> Config:
@@ -38,4 +39,5 @@ def load_config() -> Config:
         ingest_limit=int(os.environ.get("INGEST_LIMIT", "300")),
         reranker_model=os.environ.get("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"),
         reranker_device=os.environ.get("RERANKER_DEVICE", "cpu"),
+        max_search_iters=int(os.environ.get("MAX_SEARCH_ITERS", "5")),
     )

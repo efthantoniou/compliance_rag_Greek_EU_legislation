@@ -107,13 +107,14 @@ def test_search_command_prints_results():
 
 def test_ask_command_prints_agent_output():
     runner = CliRunner()
-    fake_agent = MagicMock()
-    fake_agent.run_sync.return_value.output = "Here is the answer with citation CELEX:A1."
+
+    async def fake_collect(config, deps, prompt, kind):
+        return "Here is the answer with citation CELEX:A1."
 
     with patch("main.load_config", return_value=_fake_config()), \
          patch("main._check_llamacpp_reachable"), \
          patch("main.Embedder"), \
-         patch("main.build_ask_agent", return_value=fake_agent):
+         patch("main._collect_prompted_answer", fake_collect):
         result = runner.invoke(cli, ["ask", "what are the rules?"])
 
     assert result.exit_code == 0, result.output
@@ -131,17 +132,39 @@ def test_ask_command_fails_loudly_when_llamacpp_unreachable():
     assert "unreachable" in result.output
 
 
+def test_collect_prompted_answer(monkeypatch):
+    import asyncio
+
+    import main as main_mod
+
+    async def fake_events(config, deps, user_prompt, kind):
+        from agent.core.loop import ToolCall, Token
+
+        yield ToolCall(query="q")
+        yield Token(text="Hel")
+        yield Token(text="lo")
+
+    monkeypatch.setattr(main_mod, "prompted_events", fake_events)
+    answer = asyncio.run(
+        main_mod._collect_prompted_answer(
+            config=object(), deps=object(), prompt="u", kind="ask"
+        )
+    )
+    assert answer == "Hello"
+
+
 def test_check_command_reads_file_and_prints_agent_output(tmp_path):
     runner = CliRunner()
     policy_file = tmp_path / "policy.txt"
     policy_file.write_text("We process personal data for marketing.", encoding="utf-8")
-    fake_agent = MagicMock()
-    fake_agent.run_sync.return_value.output = "Topic: data processing -> CELEX:A1"
+
+    async def fake_collect(config, deps, prompt, kind):
+        return "Topic: data processing -> CELEX:A1"
 
     with patch("main.load_config", return_value=_fake_config()), \
          patch("main._check_llamacpp_reachable"), \
          patch("main.Embedder"), \
-         patch("main.build_check_agent", return_value=fake_agent):
+         patch("main._collect_prompted_answer", fake_collect):
         result = runner.invoke(cli, ["check", str(policy_file)])
 
     assert result.exit_code == 0, result.output

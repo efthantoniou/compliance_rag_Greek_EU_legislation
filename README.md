@@ -60,7 +60,7 @@ Services (Docker Compose):
 |-------------|--------------------------|-------|----------------------------------------|
 | `surrealdb` | `surrealdb/surrealdb`    | 8000* | Vector + full-text store               |
 | `llama`     | `llama.cpp:server-cuda`  | 8080* | Local LLM (OpenAI-compatible API, GPU) |
-| `backend`   | `backend/Dockerfile`     | 9000  | FastAPI: search / ask / check / health |
+| `backend`   | `backend/Dockerfile`     | 9000  | FastAPI: search / ask / check / labels / health |
 | `frontend`  | `frontend/Dockerfile`    | 3000  | Next.js UI                             |
 | `ingest`    | `backend/Dockerfile`     | —     | One-shot corpus ingestion (profile)    |
 
@@ -79,6 +79,8 @@ agent/
   retrieval/              # hybrid search + RRF fusion, cross-encoder reranker
   ingestion/              # corpus loader, chunking, embeddings
   storage/                # SurrealDB layer (schema, inserts, vector/FTS search)
+  eurovoc.py              # resolve EUROVOC concept IDs → Greek/English names
+  eurovoc_descriptors.json # bundled level_1/2/3 descriptor lookup
 backend/                  # FastAPI app: routes, SSE streaming, schemas
 evals/                    # ground-truth generation + LLM judge + eval runner
 frontend/                 # Next.js UI
@@ -97,8 +99,10 @@ tests/                    # pytest suite (unit + integration + backend)
   sudo systemctl restart docker
   docker run --rm --gpus all ubuntu nvidia-smi   # verify the GPU is visible
   ```
-- A **GGUF model file** for llama.cpp (e.g. `Qwen3.5-9B-Q4_K_M.gguf`) in a directory
-  on the host.
+- A **GGUF model file** for llama.cpp in a directory on the host. For this Greek/EU
+  legal corpus a Greek-specialized model is recommended — e.g.
+  [`llama-krikri-8b-instruct-q8_0.gguf`](https://huggingface.co/ilsp/Llama-Krikri-8B-Instruct-GGUF)
+  (~8.7 GB, fits a 16 GB GPU at near-lossless Q8_0) — but any GGUF works.
 - Free host ports **3000** and **9000** (and 8000/8080 if you expose them).
 
 For local (non-Docker) development you additionally need **Python 3.11+**,
@@ -245,8 +249,10 @@ uv run pytest -m integration  # requires a live SurrealDB at SURREALDB_URL
 
 ## Notes
 
-- **Dataset & labels** — `nlpaueb/multi_eurlex`, Greek (`el`) text with level-1 EUROVOC
-  concept labels. Documents without a Greek translation are skipped.
+- **Dataset & labels** — `nlpaueb/multi_eurlex`, Greek (`el`) text with EUROVOC concept
+  labels at all three granularities (level_1 domains, level_2 microthesauri, level_3
+  concepts), resolved to Greek/English names via the bundled `agent/eurovoc_descriptors.json`.
+  Documents without a Greek translation are skipped.
 - **A schema/chunking change requires a re-ingest.** `reset_schema` drops and recreates
   the `chunk` table (including the HNSW and BM25 indexes), so re-running `ingest` fully
   replaces the corpus — no migration needed.
