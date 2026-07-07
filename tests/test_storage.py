@@ -81,6 +81,8 @@ def test_insert_chunks_batches_rows():
         "text": "t0",
         "celex_id": "A",
         "labels": ["100149"],
+        "labels_l2": [],
+        "labels_l3": [],
         "chunk_index": 0,
         "embedding": [0.0, 0.1],
     }

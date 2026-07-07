@@ -11,7 +11,7 @@ from backend.deps import repo_root_on_path
 
 repo_root_on_path()
 
-from agent import AgentDeps  # noqa: E402
+from agent import AgentDeps, eurovoc  # noqa: E402
 from agent.retrieval import search  # noqa: E402
 from config import Config  # noqa: E402  (import after path bootstrap)
 from agent.storage.surreal import _connect  # noqa: E402
@@ -19,6 +19,8 @@ from agent.storage.surreal import _connect  # noqa: E402
 from backend.schemas import (  # noqa: E402
     AskRequest,
     CheckRequest,
+    Concept,
+    LabelsResponse,
     SearchRequest,
     SearchResponse,
     SearchResult,
@@ -67,6 +69,17 @@ async def health(request: Request) -> dict:
     return value
 
 
+def _concepts(ids: list[str]) -> list[Concept]:
+    return [Concept(**c) for c in eurovoc.concepts(ids)]
+
+
+@router.get("/labels", response_model=LabelsResponse)
+async def labels_endpoint() -> LabelsResponse:
+    # The 21 EUROVOC level_1 domains, resolved to Greek/English names, for the
+    # search filter dropdown.
+    return LabelsResponse(labels=[Concept(**c) for c in eurovoc.level_1_options()])
+
+
 @router.post("/search", response_model=SearchResponse)
 async def search_endpoint(payload: SearchRequest, request: Request) -> SearchResponse:
     config = request.app.state.config
@@ -81,7 +94,13 @@ async def search_endpoint(payload: SearchRequest, request: Request) -> SearchRes
     )
     return SearchResponse(
         results=[
-            SearchResult(celex_id=c.celex_id, labels=c.labels, text=c.text)
+            SearchResult(
+                celex_id=c.celex_id,
+                labels=_concepts(c.labels),
+                subtopics=_concepts(c.labels_l2),
+                topics=_concepts(c.labels_l3),
+                text=c.text,
+            )
             for c in chunks
         ]
     )

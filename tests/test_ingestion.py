@@ -10,7 +10,11 @@ def _build_fixture_zip(path):
         {
             "celex_id": "A1",
             "text": {"el": "Ελληνικό κείμενο ένα", "en": "English one"},
-            "eurovoc_concepts": {"level_1": ["100149"]},
+            "eurovoc_concepts": {
+                "level_1": ["100149"],
+                "level_2": ["100223"],
+                "level_3": ["2413", "712"],
+            },
         },
         {
             "celex_id": "A2",
@@ -37,7 +41,12 @@ def test_load_documents_skips_docs_without_greek_text(tmp_path):
     assert [d.celex_id for d in documents] == ["A1", "A3"]
     assert documents[0].text == "Ελληνικό κείμενο ένα"
     assert documents[0].labels == ["100149"]
+    assert documents[0].labels_l2 == ["100223"]
+    assert documents[0].labels_l3 == ["2413", "712"]
     assert documents[1].labels == ["100148", "100147"]
+    # levels absent from the row default to empty lists
+    assert documents[1].labels_l2 == []
+    assert documents[1].labels_l3 == []
 
 
 def test_load_documents_respects_limit(tmp_path):

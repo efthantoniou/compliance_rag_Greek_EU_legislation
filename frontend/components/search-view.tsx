@@ -1,16 +1,34 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ResultCard, type SearchResult } from "@/components/result-card";
+import {
+  ResultCard,
+  type Concept,
+  type SearchResult,
+} from "@/components/result-card";
 
 export default function SearchView() {
   const [query, setQuery] = useState("");
+  const [label, setLabel] = useState(""); // selected level_1 domain id ("" = all)
+  const [domains, setDomains] = useState<Concept[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Load the EUROVOC level_1 domains once to populate the filter dropdown.
+  useEffect(() => {
+    let active = true;
+    fetch("/api/labels")
+      .then((r) => r.json())
+      .then((d) => active && setDomains(d.labels ?? []))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function runSearch() {
     if (!query.trim()) return;
@@ -25,7 +43,7 @@ export default function SearchView() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query, top_k: 5 }),
+        body: JSON.stringify({ query, top_k: 5, label: label || null }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`Search failed (${res.status})`);
@@ -55,6 +73,20 @@ export default function SearchView() {
           {loading ? "Searching…" : "Search"}
         </Button>
       </div>
+      <select
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs"
+        aria-label="Filter by EUROVOC domain"
+      >
+        <option value="">All domains</option>
+        {domains.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.el}
+            {c.en && c.en !== c.el ? ` (${c.en})` : ""}
+          </option>
+        ))}
+      </select>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="space-y-3">
         {results.map((result, i) => (
