@@ -82,6 +82,7 @@ agent/
   eurovoc.py              # resolve EUROVOC concept IDs → Greek/English names
   eurovoc_descriptors.json # bundled level_1/2/3 descriptor lookup
 backend/                  # FastAPI app: routes, SSE streaming, schemas
+mcp_server/               # MCP server exposing the backend as tools (search/ask/check/labels/health)
 evals/                    # ground-truth generation + LLM judge + eval runner
 frontend/                 # Next.js UI
 tests/                    # pytest suite (unit + integration + backend)
@@ -211,6 +212,39 @@ python main.py eval-run --no-rerank
 `retrieval_hit` (did the ground-truth document's `celex_id` appear in a tool result?)
 is deterministic and doesn't depend on the local judge's quality — the most reliable
 number to track.
+
+---
+
+## MCP server
+
+`mcp_server/server.py` exposes the backend as MCP tools (`search_legislation`,
+`ask_legislation`, `check_document`, `list_legislation_labels`,
+`check_service_health`) so any MCP client — Claude Desktop, Claude Code, etc. —
+can query the corpus directly. It's a thin HTTP client of the FastAPI backend
+(no model/DB loading in the MCP process), so the backend must already be
+running (`docker compose ... up -d` or `uvicorn backend.main:app`).
+
+Register it with Claude Code:
+
+```bash
+claude mcp add compliance-rag -- uv --directory /path/to/this/repo run python -m mcp_server.server
+```
+
+Or add it manually to a client's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "compliance-rag": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/this/repo", "run", "python", "-m", "mcp_server.server"]
+    }
+  }
+}
+```
+
+If the backend isn't at `http://localhost:9000`, set `COMPLIANCE_RAG_BACKEND_URL`
+(as an `env` entry in the MCP config, or in your shell before running it directly).
 
 ---
 
