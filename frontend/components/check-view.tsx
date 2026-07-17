@@ -5,7 +5,9 @@ import Markdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Activity } from "@/components/activity";
+import { linkifyCelexCitations } from "@/lib/celex";
 import { parseSse } from "@/lib/sse";
+import { ExternalLink } from "@/components/external-link";
 
 export default function CheckView() {
   const [doc, setDoc] = useState("");
@@ -77,7 +79,7 @@ export default function CheckView() {
       <Activity phase={phase} searches={searches} />
       {report && (
         <div className="prose prose-sm max-w-none dark:prose-invert">
-          <Markdown>{report}</Markdown>
+          <Markdown components={{ a: ExternalLink }}>{linkifyCelexCitations(report)}</Markdown>
         </div>
       )}
     </div>

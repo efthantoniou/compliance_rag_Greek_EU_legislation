@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { eurLexUrl } from "@/lib/celex";
 
 export type Concept = { id: string; el: string; en: string };
 
@@ -19,7 +20,16 @@ export function ResultCard({ result }: { result: SearchResult }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm font-mono">{result.celex_id}</CardTitle>
+        <CardTitle className="text-sm font-mono">
+          <a
+            href={eurLexUrl(result.celex_id)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline"
+          >
+            {result.celex_id}
+          </a>
+        </CardTitle>
         {result.labels.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {result.labels.map((c) => (
