@@ -5,7 +5,9 @@ import Markdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Activity } from "@/components/activity";
+import { linkifyCelexCitations } from "@/lib/celex";
 import { parseSse } from "@/lib/sse";
+import { ExternalLink } from "@/components/external-link";
 
 export default function AskView() {
   const [question, setQuestion] = useState("");
@@ -71,7 +73,7 @@ export default function AskView() {
       <Activity phase={phase} searches={searches} />
       {answer && (
         <div className="prose prose-sm max-w-none dark:prose-invert">
-          <Markdown>{answer}</Markdown>
+          <Markdown components={{ a: ExternalLink }}>{linkifyCelexCitations(answer)}</Markdown>
         </div>
       )}
     </div>
