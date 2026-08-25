@@ -1,5 +1,5 @@
 from agent.ingestion.embeddings import Embedder
-from agent.retrieval.reranker import rerank_chunks
+from agent.retrieval.reranker import rerank_chunks, rerank_chunks_scored
 from agent.storage.surreal import fts_search, vector_search
 from config import Config
 from models import Chunk
@@ -33,13 +33,13 @@ def _row_to_chunk(row: dict) -> Chunk:
     )
 
 
-def search(
+def _candidates(
     config: Config,
     embedder: Embedder,
     query: str,
-    top_k: int = 5,
-    label_filter: str | None = None,
-    rerank: bool = True,
+    top_k: int,
+    label_filter: str | None,
+    rerank: bool,
 ) -> list[Chunk]:
     query_embedding = embedder.embed_query(query)
     candidates = top_k * CANDIDATE_MULTIPLIER
@@ -48,7 +48,18 @@ def search(
     )
     fts_rows = fts_search(config, query, top_k=candidates, label_filter=label_filter)
     fused = _rrf_fuse([vector_rows, fts_rows], candidates if rerank else top_k)
-    chunks = [_row_to_chunk(row) for row in fused]
+    return [_row_to_chunk(row) for row in fused]
+
+
+def search(
+    config: Config,
+    embedder: Embedder,
+    query: str,
+    top_k: int = 5,
+    label_filter: str | None = None,
+    rerank: bool = True,
+) -> list[Chunk]:
+    chunks = _candidates(config, embedder, query, top_k, label_filter, rerank)
     if rerank:
         chunks = rerank_chunks(
             query,
@@ -58,3 +69,30 @@ def search(
             device=config.reranker_device,
         )
     return chunks
+
+
+def search_scored(
+    config: Config,
+    embedder: Embedder,
+    query: str,
+    top_k: int = 5,
+    label_filter: str | None = None,
+    rerank: bool = True,
+) -> list[tuple[Chunk, float | None]]:
+    """As search(), but each chunk carries its cross-encoder score.
+
+    The score is None when reranking is disabled — there is no cross-encoder
+    pass to produce one, and callers must not mistake that for a score of zero.
+    """
+    chunks = _candidates(config, embedder, query, top_k, label_filter, rerank)
+    if not rerank:
+        return [(chunk, None) for chunk in chunks]
+    return list(
+        rerank_chunks_scored(
+            query,
+            chunks,
+            top_n=top_k,
+            model_name=config.reranker_model,
+            device=config.reranker_device,
+        )
+    )

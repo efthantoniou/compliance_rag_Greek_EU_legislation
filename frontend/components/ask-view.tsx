@@ -8,6 +8,7 @@ import { Activity } from "@/components/activity";
 import { linkifyCelexCitations } from "@/lib/celex";
 import { parseSse } from "@/lib/sse";
 import { ExternalLink } from "@/components/external-link";
+import { AskEmpty } from "@/components/empty-state";
 
 export default function AskView() {
   const [question, setQuestion] = useState("");
@@ -21,8 +22,10 @@ export default function AskView() {
   // Abort any in-flight stream if the component unmounts (e.g. tab switch).
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  const canAsk = question.trim().length > 0 && !busy;
+
   async function ask() {
-    if (!question.trim()) return;
+    if (!canAsk) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -60,22 +63,37 @@ export default function AskView() {
 
   return (
     <div className="space-y-4">
-      <Textarea
-        value={question}
-        onChange={(e) => setQuestion(e.target.value)}
-        placeholder="Ask a question about Greek / EU legislation…"
-        rows={3}
-      />
-      <Button onClick={ask} disabled={busy}>
+      <div className="space-y-1.5">
+        <label htmlFor="ask-question" className="field-label">
+          Your question
+        </label>
+        <Textarea
+          id="ask-question"
+          value={question}
+          onChange={(e) => {
+            setQuestion(e.target.value);
+            // A stale failure must not outlive the request it described.
+            if (error) setError(null);
+          }}
+          placeholder="Ask a question about Greek / EU legislation…"
+          rows={3}
+        />
+      </div>
+      <Button onClick={ask} disabled={!canAsk} className="min-h-11">
         {busy ? "Asking…" : "Ask"}
       </Button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <Activity phase={phase} searches={searches} />
       {answer && (
         <div className="prose prose-sm max-w-none dark:prose-invert">
           <Markdown components={{ a: ExternalLink }}>{linkifyCelexCitations(answer)}</Markdown>
         </div>
       )}
+      {!busy && !error && !answer && phase === null && <AskEmpty />}
     </div>
   );
 }

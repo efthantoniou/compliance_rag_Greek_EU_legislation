@@ -7,17 +7,23 @@ import { HealthBadge } from "@/components/health-badge";
 export default function Home() {
   return (
     <main className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Compliance RAG</h1>
-        <HealthBadge/>
+      <div className="flex items-center justify-between gap-4">
+        {/* DESIGN.md `display-xl`: 52 / 1.05, masthead only. Never below 24px —
+            Didot is high-contrast and its hairlines break at small sizes. */}
+        <h1 className="font-display text-[2rem] leading-[1.05] sm:text-[3.25rem]">
+          Compliance RAG
+        </h1>
+        <HealthBadge />
       </div>
       <Tabs defaultValue="search">
-        <TabsList>
-          <TabsTrigger value="search">Search</TabsTrigger>
-          <TabsTrigger value="ask">
+        <TabsList className="min-h-11">
+          <TabsTrigger value="search" className="min-h-11 px-3">
+            Search
+          </TabsTrigger>
+          <TabsTrigger value="ask" className="min-h-11 px-3">
             Ask
           </TabsTrigger>
-          <TabsTrigger value="check">
+          <TabsTrigger value="check" className="min-h-11 px-3">
             Check
           </TabsTrigger>
         </TabsList>

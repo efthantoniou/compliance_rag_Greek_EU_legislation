@@ -8,6 +8,7 @@ import { Activity } from "@/components/activity";
 import { linkifyCelexCitations } from "@/lib/celex";
 import { parseSse } from "@/lib/sse";
 import { ExternalLink } from "@/components/external-link";
+import { CheckEmpty } from "@/components/empty-state";
 
 export default function CheckView() {
   const [doc, setDoc] = useState("");
@@ -26,8 +27,10 @@ export default function CheckView() {
     if (file) setDoc(await file.text());
   }
 
+  const canCheck = doc.trim().length > 0 && !busy;
+
   async function check() {
-    if (!doc.trim()) return;
+    if (!canCheck) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -65,23 +68,49 @@ export default function CheckView() {
 
   return (
     <div className="space-y-4">
-      <input type="file" accept=".txt" onChange={onFile} className="text-sm" />
-      <Textarea
-        value={doc}
-        onChange={(e) => setDoc(e.target.value)}
-        placeholder="Paste a policy document, or upload a .txt file above…"
-        rows={6}
-      />
-      <Button onClick={check} disabled={busy}>
+      <div className="space-y-1.5">
+        <label htmlFor="check-file" className="field-label">
+          Upload a .txt file
+        </label>
+        <input
+          id="check-file"
+          type="file"
+          accept=".txt"
+          onChange={onFile}
+          className="block w-full min-h-11 rounded-md border border-input bg-transparent px-3 py-2 font-ui text-sm outline-none file:mr-3 file:cursor-pointer file:rounded-sm file:border file:border-input file:bg-secondary file:px-2.5 file:py-1 file:font-ui file:text-sm file:font-medium file:text-secondary-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="check-doc" className="field-label">
+          Policy document
+        </label>
+        <Textarea
+          id="check-doc"
+          value={doc}
+          onChange={(e) => {
+            setDoc(e.target.value);
+            // A stale failure must not outlive the request it described.
+            if (error) setError(null);
+          }}
+          placeholder="Paste a policy document, or upload a .txt file above…"
+          rows={6}
+        />
+      </div>
+      <Button onClick={check} disabled={!canCheck} className="min-h-11">
         {busy ? "Checking…" : "Check"}
       </Button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <Activity phase={phase} searches={searches} />
       {report && (
         <div className="prose prose-sm max-w-none dark:prose-invert">
           <Markdown components={{ a: ExternalLink }}>{linkifyCelexCitations(report)}</Markdown>
         </div>
       )}
+      {!busy && !error && !report && phase === null && <CheckEmpty />}
     </div>
   );
 }

@@ -10,6 +10,7 @@ export type SearchResult = {
   subtopics: Concept[]; // level_2 (microthesauri)
   topics: Concept[]; // level_3 (specific concepts)
   text: string;
+  score?: number | null; // cross-encoder relevance in [0, 1]
 };
 
 function conceptLabel(c: Concept) {

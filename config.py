@@ -19,6 +19,13 @@ class Config:
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     reranker_device: str = "cpu"
     max_search_iters: int = 5
+    # Cross-encoder score bands. Scores are sigmoid-squashed to [0, 1].
+    # Measured on this corpus (2026-08-25, n=28): legitimate Greek queries score
+    # 0.75-0.99 at top-1, off-topic and nonsense queries score below 0.08, and
+    # nothing landed in between. `min` drops individual junk results; `weak`
+    # separates a confident answer from one that should carry a caveat.
+    retrieval_min_score: float = 0.10
+    retrieval_weak_score: float = 0.50
 
 
 def load_config() -> Config:
@@ -40,4 +47,6 @@ def load_config() -> Config:
         reranker_model=os.environ.get("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"),
         reranker_device=os.environ.get("RERANKER_DEVICE", "cpu"),
         max_search_iters=int(os.environ.get("MAX_SEARCH_ITERS", "5")),
+        retrieval_min_score=float(os.environ.get("RETRIEVAL_MIN_SCORE", "0.10")),
+        retrieval_weak_score=float(os.environ.get("RETRIEVAL_WEAK_SCORE", "0.50")),
     )

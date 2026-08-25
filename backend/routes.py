@@ -12,7 +12,7 @@ from backend.deps import repo_root_on_path
 repo_root_on_path()
 
 from agent import AgentDeps, eurovoc  # noqa: E402
-from agent.retrieval import search  # noqa: E402
+from agent.retrieval import search_scored  # noqa: E402
 from config import Config  # noqa: E402  (import after path bootstrap)
 from agent.storage.surreal import _connect  # noqa: E402
 
@@ -84,15 +84,34 @@ async def labels_endpoint() -> LabelsResponse:
 async def search_endpoint(payload: SearchRequest, request: Request) -> SearchResponse:
     config = request.app.state.config
     embedder = request.app.state.embedder
-    chunks = await run_in_threadpool(
-        search,
+    scored = await run_in_threadpool(
+        search_scored,
         config,
         embedder,
         payload.query,
         top_k=payload.top_k,
         label_filter=payload.label,
     )
+
+    # Vector search always returns its top_k, so without this filter an
+    # unanswerable query comes back as a full page of confident-looking
+    # passages. Drop anything the cross-encoder scored as irrelevant, and say
+    # how sure we are about what survived.
+    top_score = max((s for _, s in scored if s is not None), default=None)
+    if top_score is None:
+        kept, status = scored, "grounded"  # reranking off: nothing to judge on
+    else:
+        kept = [(c, s) for c, s in scored if s is not None and s >= config.retrieval_min_score]
+        if not kept:
+            status = "refused"
+        elif top_score < config.retrieval_weak_score:
+            status = "weak"
+        else:
+            status = "grounded"
+
     return SearchResponse(
+        status=status,
+        top_score=top_score,
         results=[
             SearchResult(
                 celex_id=c.celex_id,
@@ -100,9 +119,10 @@ async def search_endpoint(payload: SearchRequest, request: Request) -> SearchRes
                 subtopics=_concepts(c.labels_l2),
                 topics=_concepts(c.labels_l3),
                 text=c.text,
+                score=score,
             )
-            for c in chunks
-        ]
+            for c, score in kept
+        ],
     )
 
 
