@@ -9,7 +9,10 @@ DEFAULT_RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
 
 @lru_cache(maxsize=1)
 def _load(model_name: str, device: str = "cpu") -> CrossEncoder:
-    return CrossEncoder(model_name, device=device, max_length=512)
+    # fp16 on GPU halves VRAM (~2.3 GB → ~1.15 GB) so the reranker fits next to
+    # llama.cpp on a 16 GB card; CPU stays fp32, where fp16 is slow.
+    model_kwargs = {"torch_dtype": "float16"} if device.startswith("cuda") else None
+    return CrossEncoder(model_name, device=device, max_length=512, model_kwargs=model_kwargs)
 
 
 def rerank_chunks_scored(
