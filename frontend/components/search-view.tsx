@@ -3,24 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  ResultCard,
-  type Concept,
-  type SearchResult,
-} from "@/components/result-card";
+import { Composer } from "@/components/composer";
+import { ResultCard, type Concept, type SearchResult } from "@/components/result-card";
 import {
   CelexShortcut,
   NotGreekNotice,
   SearchEmpty,
   SearchNoResults,
-  WeakRetrievalNotice,
 } from "@/components/empty-state";
+import { Pagination } from "@/components/pagination";
 import { gateQuery, type QueryGate } from "@/lib/query-language";
 
-// Mirrors Config.retrieval_weak_score on the backend; used only to explain the
-// number the API already decided on, never to re-classify here.
-const WEAK_SCORE = 0.5;
-const MIN_SCORE = 0.1;
+// Mirrors Config.retrieval_min_score on the backend; used only to explain a
+// refusal the API already decided on, never to re-filter here.
+const MIN_SCORE = 0.55;
+const PAGE_SIZE = 10;
+
+// What the results on screen were searched with. Paging re-asks the same
+// question, even if the input has been edited since.
+type Searched = { query: string; label: string };
 
 export default function SearchView() {
   const [query, setQuery] = useState("");
@@ -29,11 +30,13 @@ export default function SearchView() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // The query a result set belongs to. null means nothing has been run yet,
+  // The search a result set belongs to. null means nothing has been run yet,
   // which is a different state from "ran and found nothing".
-  const [searched, setSearched] = useState<string | null>(null);
-  const [status, setStatus] = useState<"grounded" | "weak" | "refused">("grounded");
+  const [searched, setSearched] = useState<Searched | null>(null);
   const [topScore, setTopScore] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const summaryRef = useRef<HTMLParagraphElement>(null);
   // Set when the query never reached the server: wrong script, or a CELEX id.
   const [gate, setGate] = useState<QueryGate>({ kind: "ok" });
   const abortRef = useRef<AbortController | null>(null);
@@ -52,7 +55,10 @@ export default function SearchView() {
 
   const canSearch = query.trim().length > 0 && !loading;
 
-  async function runSearch(override?: string) {
+  async function runSearch(
+    override?: string,
+    target: { page: number; label: string } = { page: 1, label }
+  ) {
     const q = (override ?? query).trim();
     if (!q || loading) return;
 
@@ -76,15 +82,29 @@ export default function SearchView() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: q, top_k: 5, label: label || null }),
+        body: JSON.stringify({
+          query: q,
+          page: target.page,
+          page_size: PAGE_SIZE,
+          label: target.label || null,
+        }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`Search failed (${res.status})`);
       const data = await res.json();
       setResults(data.results);
-      setStatus(data.status ?? "grounded");
       setTopScore(data.top_score ?? null);
-      setSearched(q);
+      setTotal(data.total ?? data.results.length);
+      setPage(target.page);
+      setSearched({ query: q, label: target.label });
+      if (target.page > 1 || page > 1) {
+        // A new page replaced the list: move focus (and the view) to its top
+        // so keyboard and screen-reader users land on the new results.
+        requestAnimationFrame(() => {
+          summaryRef.current?.focus({ preventScroll: true });
+          summaryRef.current?.scrollIntoView({ block: "start" });
+        });
+      }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Search failed");
@@ -97,53 +117,51 @@ export default function SearchView() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <label htmlFor="search-query" className="field-label">
-          Search query
-        </label>
-        <div className="flex gap-2">
-          <Input
-            id="search-query"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              // A stale failure must not outlive the request it described.
-              if (error) setError(null);
-              if (gate.kind !== "ok") setGate({ kind: "ok" });
-            }}
-            onKeyDown={(e) => e.key === "Enter" && runSearch()}
-            placeholder="Search Greek EU legislation…"
-            className="min-h-11"
-          />
-          <Button
-            onClick={() => runSearch()}
-            disabled={!canSearch}
-            className="min-h-11"
-          >
-            {loading ? "Searching…" : "Search"}
-          </Button>
+    <div className="space-y-5">
+      <Composer>
+        <div className="space-y-1.5">
+          <label htmlFor="search-query" className="field-label">
+            Search query
+          </label>
+          <div className="flex gap-2">
+            <Input
+              id="search-query"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                // A stale failure must not outlive the request it described.
+                if (error) setError(null);
+                if (gate.kind !== "ok") setGate({ kind: "ok" });
+              }}
+              onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              placeholder="Search Greek EU legislation…"
+              className="min-h-11"
+            />
+            <Button onClick={() => runSearch()} disabled={!canSearch} className="min-h-11">
+              {loading ? "Searching…" : "Search"}
+            </Button>
+          </div>
         </div>
-      </div>
-      <div className="space-y-1.5">
-        <label htmlFor="domain-filter" className="field-label">
-          Filter by EUROVOC domain
-        </label>
-        <select
-          id="domain-filter"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          className="min-h-11 w-full rounded-md border border-input bg-transparent px-3 font-ui text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <option value="">All domains</option>
-          {domains.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.el}
-              {c.en && c.en !== c.el ? ` (${c.en})` : ""}
-            </option>
-          ))}
-        </select>
-      </div>
+        <div className="space-y-1.5">
+          <label htmlFor="domain-filter" className="field-label">
+            Filter by EUROVOC domain
+          </label>
+          <select
+            id="domain-filter"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            className="min-h-11 w-full rounded-md border border-input bg-transparent px-3 font-ui text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <option value="">All domains</option>
+            {domains.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.el}
+                {c.en && c.en !== c.el ? ` (${c.en})` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      </Composer>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -153,14 +171,19 @@ export default function SearchView() {
       {gate.kind === "not-greek" && <NotGreekNotice />}
       {gate.kind === "ok" && (
         <>
-          {status === "weak" && results.length > 0 && topScore !== null && (
-            <WeakRetrievalNotice topScore={topScore} threshold={WEAK_SCORE} />
-          )}
-          {results.length > 0 && (
+          {results.length > 0 && searched && (
             <div className="space-y-3">
+              <Pagination.Summary ref={summaryRef} page={page} pageSize={PAGE_SIZE} total={total} />
               {results.map((result, i) => (
-                <ResultCard key={`${result.celex_id}-${i}`} result={result} />
+                <ResultCard key={`${result.celex_id}-${page}-${i}`} result={result} />
               ))}
+              <Pagination.Controls
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={total}
+                disabled={loading}
+                onPage={(p) => runSearch(searched.query, { page: p, label: searched.label })}
+              />
             </div>
           )}
           {!loading && !error && results.length === 0 && searched === null && (
@@ -175,9 +198,9 @@ export default function SearchView() {
           )}
           {!loading && !error && results.length === 0 && searched !== null && (
             <SearchNoResults
-              query={searched}
+              query={searched.query}
               domains={domains}
-              filtered={label !== ""}
+              filtered={searched.label !== ""}
               topScore={topScore}
               threshold={MIN_SCORE}
             />

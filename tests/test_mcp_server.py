@@ -22,13 +22,18 @@ def _sse_body(*frames: tuple[str, dict]) -> bytes:
 
 
 @pytest.mark.anyio
-async def test_search_legislation_formats_results():
+async def test_search_legislation_requests_a_page_and_says_where_it_is():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/search"
-        assert json.loads(request.content) == {"query": "tax", "top_k": 5, "label": None}
+        assert json.loads(request.content) == {
+            "query": "tax", "page": 2, "page_size": 1, "label": None,
+        }
         return httpx.Response(
             200,
             json={
+                "total": 3,
+                "page": 2,
+                "page_size": 1,
                 "results": [
                     {
                         "celex_id": "A1",
@@ -36,15 +41,18 @@ async def test_search_legislation_formats_results():
                         "subtopics": [],
                         "topics": [],
                         "text": "alpha",
+                        "score": 0.91,
+                        "matches": 3,
                     }
-                ]
+                ],
             },
         )
 
     with patch("mcp_server.server._client", lambda: _mock_client(handler)):
-        result = await server.search_legislation("tax")
+        result = await server.search_legislation("tax", page=2, page_size=1)
 
-    assert "celex_id=A1" in result
+    assert result.startswith("Results 2-2 of 3 (page 2 of 3).")
+    assert "[2] celex_id=A1 matching_passages=3" in result
     assert "φορολογία" in result
     assert "alpha" in result
 

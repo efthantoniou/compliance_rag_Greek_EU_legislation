@@ -24,10 +24,25 @@ from agent.core.prompts import (
 )
 
 
+# Per-document preview text sent to the UI with each search; the full chunk
+# only goes to the writer.
+SNIPPET_CHARS = 280
+
+
 @dataclass
 class ToolCall:
     query: str
     celex_ids: list[str] = field(default_factory=list)
+    snippets: dict[str, str] = field(default_factory=dict)  # celex_id -> best chunk preview
+
+
+def _snippets(chunks: list) -> dict[str, str]:
+    snippets: dict[str, str] = {}
+    for c in chunks:  # ranked best-first, so the first chunk per document wins
+        if c.celex_id not in snippets:
+            text = c.text.strip()
+            snippets[c.celex_id] = text if len(text) <= SNIPPET_CHARS else text[:SNIPPET_CHARS] + "…"
+    return snippets
 
 
 @dataclass
@@ -75,7 +90,11 @@ async def run_prompted(
         # SearchAction
         chunks = search_fn(action.query, action.top_k)
         collected.extend(chunks)
-        yield ToolCall(query=action.query, celex_ids=[c.celex_id for c in chunks])
+        yield ToolCall(
+            query=action.query,
+            celex_ids=[c.celex_id for c in chunks],
+            snippets=_snippets(chunks),
+        )
         next_input = _planner_feedback(action.query, chunks)
 
     writer_prompt = format_writer_prompt(user_prompt, collected)
@@ -104,20 +123,3 @@ async def prompted_events(
         planner, writer, search_fn, user_prompt, config.max_search_iters
     ):
         yield event
-
-
-async def collect_answer_and_sources(
-    config, deps, user_prompt: str, kind: Literal["ask", "check"]
-) -> tuple[str, list[str]]:
-    """Run the prompted loop to completion, returning the full answer text and
-    the deduped celex_ids retrieved along the way. Used by the eval harness."""
-    answer_parts: list[str] = []
-    sources: list[str] = []
-    async for event in prompted_events(config, deps, user_prompt, kind):
-        if isinstance(event, ToolCall):
-            for cid in event.celex_ids:
-                if cid not in sources:
-                    sources.append(cid)
-        elif isinstance(event, Token):
-            answer_parts.append(event.text)
-    return "".join(answer_parts), sources

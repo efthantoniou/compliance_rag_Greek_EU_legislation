@@ -75,7 +75,7 @@ const mono = JetBrains_Mono({ subsets: ["greek", "latin"], variable: "--font-mon
 | `body-sm` | 13.5 / 1.55 | Literata | Source snippets, result excerpts |
 | `ui` | 15 / 1.50 | Plex Sans | Buttons, inputs, nav |
 | `ui-sm` | 13 / 1.50 | Plex Sans | Secondary UI, alerts |
-| `label` | 11 / 1.40, 600, `.09em`, uppercase | Plex Sans | Section headers |
+| `label` | 13 / 1.40, 500, sentence case | Plex Sans | Field and section labels |
 | `mono` | 14 / 1.70 | JetBrains | Identifiers |
 | `mono-sm` | 11 / 1.90 | JetBrains | Retrieval trace, scores |
 
@@ -101,6 +101,8 @@ Measure: cap reading surfaces at **66ch**. Never let a Greek statutory passage r
 | `uncertain` | `oklch(0.62 0.110 65)` | `oklch(0.75 0.100 65)` | Weak retrieval, refusal. Amber |
 | `uncertain-quiet` | `oklch(0.95 0.035 65)` | `oklch(0.30 0.040 65)` | Uncertainty alert bg |
 | `error` | `oklch(0.55 0.190 27)` | `oklch(0.70 0.150 27)` | **System faults only** — backend down, stream failed. Never for "no results." |
+| `ok` | `oklch(0.56 0.12 150)` | `oklch(0.74 0.13 150)` | **System health only** — the status dot when database and model are up. Never on content. |
+| `raised` | `oklch(1 0 0)` | `oklch(0.34 0.014 250)` | Selected control on a muted track (the active mode). Always lighter than the track, in both themes. |
 
 - **Why petrol:** royal navy is the legal-tech uniform (Westlaw) and EU blue would be
   derivative. Petrol stays authoritative while belonging to nobody else in the category.
@@ -135,22 +137,37 @@ Measure: cap reading surfaces at **66ch**. Never let a Greek statutory passage r
 
 ## Motion
 
-- **Approach:** minimal-functional. Motion earns its place in exactly two places:
-  token streaming in Ask, and the `Activity` phase indicator.
+- **Approach:** minimal-functional. Things move only when the user did something or
+  when retrieval makes progress, and the motion shows what changed. Nothing animates on
+  page load.
+- **The one orchestrated moment — the retrieval trace (Ask, Check).** Each search the
+  agent runs draws in as a node on a vertical rail with its document count ("nothing
+  found" in amber); the current step pulses. When the answer is done the trace folds to
+  one line ("Searched 5 times, found 9 documents") that reopens on click, and the
+  Sources list settles in once beneath the answer.
+- **Answers to user actions:** the mode switch's indicator slides between modes;
+  "Show full passage" animates the passage height (8 lines ↔ auto, faded edge while
+  collapsed); "+N more" topics fade in; hovering or focusing a citation fades up a
+  preview of its passage.
+- **The one ambient exception — the status dot.** While database and model are up, a
+  soft `ok`-green ring expands from the dot and fades every 2.4s. It stops when a service
+  goes down (the dot turns red), so the change of state is noticed. Added by user request.
 - **Explicitly no entrance animation on results** — animation fights scanning, which is
-  the primary behaviour on Search.
-- **Easing:** enter `ease-out`, exit `ease-in`, move `ease-in-out`
-- **Duration:** micro 50–100ms (hover, focus), short 150–250ms (theme, disclosure),
-  medium 250–400ms (pane transitions). Nothing longer.
-- Respect `prefers-reduced-motion`: drop to opacity-only.
+  the primary behaviour on Search. A new result set replaces the old one instantly.
+- **Tokens** (`globals.css`): `--ease-out: cubic-bezier(.2,.8,.2,1)`; `--motion-fast`
+  160ms (fades, previews), `--motion-base` 240ms (indicator, trace steps, height),
+  `--motion-slow` 360ms (sources settle). Nothing longer.
+- Respect `prefers-reduced-motion`: every animation and transition becomes instant.
 
 ## State Design — the part that matters most
 
 This system's distinguishing rule. Three epistemic states, visually distinct:
 
 1. **Grounded** — answer with citations. Petrol on every CELEX id. Sources listed below.
-2. **Weak** — retrieval succeeded but rerank scores are low. Amber alert above the answer
-   stating the scores. The answer still renders; the caveat is not hidden.
+2. **Weak** — retrieval succeeded but rerank scores are low. *Search no longer has this
+   state:* it shows only results scoring ≥ 0.55 (`RETRIEVAL_MIN_SCORE`), so a query is
+   either grounded or refused. In Ask/Check it appears per search in the retrieval trace
+   ("nothing found" in amber).
 3. **Refused** — nothing relevant retrieved. **This is a hero state, not an error state.**
    - Set at `body-lg` (22/1.5) in `foreground`, not muted, not small, not centred-and-grey.
    - Amber `◆` marker, never a red error treatment — refusing is correct behaviour.
@@ -187,3 +204,7 @@ Confirmed in the codebase at the time this document was written:
 | 2026-08-23 | Refusal state as hero state (RISK) | The product's honesty becomes felt rather than claimed. Cost: users trained by other tools may misread it as an error |
 | 2026-08-23 | Colour encodes epistemic status, not brand (RISK) | Petrol = verified source, amber = weak retrieval, nothing else coloured. Cost: colour is permanently unavailable as a branding tool |
 | 2026-08-23 | Petrol accent over navy/EU blue | Navy is the category uniform; EU blue would be derivative |
+| 2026-10-29 | Evolve, don't replace: modern layout + motion inside this system | User-selected over a new identity. Same faces and colour meanings; adds per-mode input sheets, the retrieval trace, a Sources list with decoded CELEX type/year, and citation previews |
+| 2026-10-29 | Search: paginated, only results ≥ 0.55 | User request. One reranked pool of 50 per query (`SEARCH_POOL`), sliced 10 per page so pages never reorder; the 0.10–0.50 weak band is dropped rather than caveated. Each document appears once (its best passage, plus "N matching passages"), and pages count documents |
+| 2026-10-29 | Green `ok` token for the status dot; `raised` for the active mode | User feedback: a grey dot read as inactive, and in dark mode the active tab was darker than its track so it looked pressed in. Green stays off content, so petrol/amber keep their meaning |
+| 2026-10-29 | Labels in sentence case, 13px | Tracked uppercase labels read as template chrome; the label text was already sentence case |

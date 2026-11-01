@@ -12,7 +12,7 @@ from backend.deps import repo_root_on_path
 repo_root_on_path()
 
 from agent import AgentDeps, eurovoc  # noqa: E402
-from agent.retrieval import search_scored  # noqa: E402
+from agent.retrieval import rank_pool  # noqa: E402
 from config import Config  # noqa: E402  (import after path bootstrap)
 from agent.storage.surreal import _connect  # noqa: E402
 
@@ -85,33 +85,35 @@ async def search_endpoint(payload: SearchRequest, request: Request) -> SearchRes
     config = request.app.state.config
     embedder = request.app.state.embedder
     scored = await run_in_threadpool(
-        search_scored,
+        rank_pool,
         config,
         embedder,
         payload.query,
-        top_k=payload.top_k,
+        pool=config.search_pool,
         label_filter=payload.label,
     )
 
-    # Vector search always returns its top_k, so without this filter an
-    # unanswerable query comes back as a full page of confident-looking
-    # passages. Drop anything the cross-encoder scored as irrelevant, and say
-    # how sure we are about what survived.
-    top_score = max((s for _, s in scored if s is not None), default=None)
-    if top_score is None:
-        kept, status = scored, "grounded"  # reranking off: nothing to judge on
-    else:
-        kept = [(c, s) for c, s in scored if s is not None and s >= config.retrieval_min_score]
-        if not kept:
-            status = "refused"
-        elif top_score < config.retrieval_weak_score:
-            status = "weak"
-        else:
-            status = "grounded"
+    # Vector search always returns candidates, so without this filter an
+    # unanswerable query comes back as pages of confident-looking passages.
+    # Keep only what the cross-encoder scored as a real match, show each
+    # document once (its best passage; the pool is best-first), then page it.
+    top_score = scored[0][1] if scored else None
+    documents: dict[str, tuple] = {}  # celex_id -> (best chunk, score, matches)
+    for c, s in scored:
+        if s < config.retrieval_min_score:
+            continue
+        best = documents.get(c.celex_id)
+        documents[c.celex_id] = (c, s, 1) if best is None else (best[0], best[1], best[2] + 1)
+    kept = list(documents.values())
+    start = (payload.page - 1) * payload.page_size
+    page = kept[start : start + payload.page_size]
 
     return SearchResponse(
-        status=status,
+        status="grounded" if kept else "refused",
         top_score=top_score,
+        total=len(kept),
+        page=payload.page,
+        page_size=payload.page_size,
         results=[
             SearchResult(
                 celex_id=c.celex_id,
@@ -120,8 +122,9 @@ async def search_endpoint(payload: SearchRequest, request: Request) -> SearchRes
                 topics=_concepts(c.labels_l3),
                 text=c.text,
                 score=score,
+                matches=matches,
             )
-            for c, score in kept
+            for c, score, matches in page
         ],
     )
 

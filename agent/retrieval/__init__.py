@@ -1,4 +1,4 @@
 from agent.retrieval.reranker import rerank_chunks, rerank_chunks_scored
-from agent.retrieval.search import search, search_scored
+from agent.retrieval.search import rank_pool, search
 
-__all__ = ["search", "search_scored", "rerank_chunks", "rerank_chunks_scored"]
+__all__ = ["search", "rank_pool", "rerank_chunks", "rerank_chunks_scored"]

@@ -81,27 +81,40 @@ async def _stream_answer(path: str, payload: dict) -> str:
 
 
 @mcp.tool()
-async def search_legislation(query: str, top_k: int = 5, label: str | None = None) -> str:
+async def search_legislation(
+    query: str, page: int = 1, page_size: int = 10, label: str | None = None
+) -> str:
     """Hybrid (vector + BM25 + cross-encoder rerank) search over the Greek/EU
     legislation corpus. No LLM is involved — fast, raw retrieval for inspecting
-    what the index returns. Returns the top passages with their CELEX ids and
-    EUROVOC domain labels.
+    what the index returns. Only passages scoring at least 0.55 count; each
+    document is returned once (its best passage, with how many of its passages
+    matched), best first, a page at a time, with CELEX ids and EUROVOC domains.
 
     Args:
         query: Search query. Greek queries work best since the corpus is Greek
             EU-legislation text, but the embedding model is multilingual.
-        top_k: Number of passages to return.
+        page: 1-based page number; the header line says how many pages exist.
+        page_size: Passages per page (1-50).
         label: Optional EUROVOC level_1 domain id to restrict results to (see
             `list_legislation_labels`).
     """
-    data = await _post("/api/search", {"query": query, "top_k": top_k, "label": label})
+    data = await _post(
+        "/api/search", {"query": query, "page": page, "page_size": page_size, "label": label}
+    )
     results = data["results"]
     if not results:
         return "No relevant passages found."
-    blocks = []
-    for i, r in enumerate(results, start=1):
+    first = (data["page"] - 1) * data["page_size"] + 1
+    last = first + len(results) - 1
+    pages = -(-data["total"] // data["page_size"])  # ceiling division
+    blocks = [f"Results {first}-{last} of {data['total']} (page {data['page']} of {pages})."]
+    for i, r in enumerate(results, start=first):
         domains = ", ".join(c["el"] for c in r["labels"]) or "none"
-        blocks.append(f"[{i}] celex_id={r['celex_id']} domains=[{domains}]\n{r['text']}")
+        matches = r.get("matches", 1)
+        blocks.append(
+            f"[{i}] celex_id={r['celex_id']} matching_passages={matches} "
+            f"domains=[{domains}]\n{r['text']}"
+        )
     return "\n\n".join(blocks)
 
 

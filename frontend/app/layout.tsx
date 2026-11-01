@@ -34,6 +34,10 @@ const mono = JetBrains_Mono({
   variable: "--ff-mono",
 });
 
+// Follow the OS light/dark setting, including changes while the page is open.
+// globals.css defines the dark tokens under `.dark`.
+const FOLLOW_SYSTEM_THEME = `(function(){try{var m=window.matchMedia("(prefers-color-scheme: dark)");var a=function(){document.documentElement.classList.toggle("dark",m.matches)};a();m.addEventListener("change",a)}catch(e){}})()`;
+
 export const metadata: Metadata = {
   title: "Compliance RAG",
   description: "Greek EU legislation retrieval",
@@ -45,10 +49,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // The inline script picks the theme before first paint, so the server's
+    // class list is corrected on the client; suppressHydrationWarning accepts it.
     <html
       lang="el"
+      suppressHydrationWarning
       className={`${display.variable} ${body.variable} ${ui.variable} ${mono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: FOLLOW_SYSTEM_THEME }} />
+      </head>
       <body className="min-h-full bg-background font-body text-foreground">
         <div className="mx-auto max-w-3xl px-4 py-8">{children}</div>
       </body>

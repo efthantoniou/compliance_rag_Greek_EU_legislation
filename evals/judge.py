@@ -33,14 +33,28 @@ class JudgeResult(BaseModel):
     notes: str
 
 
-def judge_answer(
+def judge_url(config: Config) -> str:
+    return config.judge_llamacpp_url or config.llamacpp_url
+
+
+def judge_model(config: Config) -> str:
+    return config.judge_llamacpp_model or config.llamacpp_model
+
+
+async def judge_answer(
     config: Config,
     question: str,
     expected_answer: str,
     rag_answer: str,
     rag_sources: list[str],
 ) -> JudgeResult:
-    agent = build_structured_agent(config, JUDGE_INSTRUCTIONS, JudgeResult)
+    agent = build_structured_agent(
+        config,
+        JUDGE_INSTRUCTIONS,
+        JudgeResult,
+        base_url=judge_url(config),
+        model_name=judge_model(config),
+    )
     sources = ", ".join(rag_sources) if rag_sources else "(κανένα)"
     prompt = (
         f"ΕΡΩΤΗΣΗ:\n{question}\n\n"
@@ -48,4 +62,4 @@ def judge_answer(
         f"ΑΠΑΝΤΗΣΗ ΣΥΣΤΗΜΑΤΟΣ:\n{rag_answer}\n\n"
         f"ΠΗΓΕΣ ΣΥΣΤΗΜΑΤΟΣ: {sources}"
     )
-    return agent.run_sync(prompt).output
+    return (await agent.run(prompt)).output

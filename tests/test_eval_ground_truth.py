@@ -1,7 +1,7 @@
-import json
 from unittest.mock import MagicMock, patch
 
 from config import Config
+from evals.dataset import load_ground_truth
 from evals.ground_truth import (
     GroundTruthBatch,
     QAPair,
@@ -31,7 +31,7 @@ def test_gather_document_text_joins_and_truncates():
     assert text == "abcde\n\nfgh"
 
 
-def test_generate_ground_truth_writes_jsonl(tmp_path):
+def test_generate_ground_truth_writes_yaml_dataset(tmp_path):
     batch = GroundTruthBatch(
         questions=[
             QAPair(question="Q1;", expected_answer="A1.", difficulty="easy"),
@@ -40,7 +40,7 @@ def test_generate_ground_truth_writes_jsonl(tmp_path):
     )
     fake_agent = MagicMock()
     fake_agent.run_sync.return_value.output = batch
-    out = tmp_path / "gt.jsonl"
+    out = tmp_path / "gt.yaml"
 
     with patch("evals.ground_truth.list_celex_ids", return_value=["A1"]), \
          patch("evals.ground_truth.chunks_by_celex", return_value=[{"text": "body"}]), \
@@ -50,8 +50,9 @@ def test_generate_ground_truth_writes_jsonl(tmp_path):
         )
 
     assert written == 2
-    records = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
-    assert records[0]["id"] == "A1-1"
-    assert records[0]["celex_id"] == "A1"
-    assert records[1]["question"] == "Q2;"
-    assert records[1]["difficulty"] == "hard"
+    cases = load_ground_truth(out).cases
+    assert cases[0].name == "A1-1"
+    assert cases[0].metadata.celex_id == "A1"
+    assert cases[1].inputs == "Q2;"
+    assert cases[1].expected_output == "A2."
+    assert cases[1].metadata.difficulty == "hard"

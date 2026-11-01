@@ -4,8 +4,6 @@ from sentence_transformers import CrossEncoder
 
 from models import Chunk
 
-DEFAULT_RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
-
 
 @lru_cache(maxsize=1)
 def _load(model_name: str, device: str = "cpu") -> CrossEncoder:

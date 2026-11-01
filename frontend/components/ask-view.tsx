@@ -1,26 +1,37 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Activity } from "@/components/activity";
-import { linkifyCelexCitations } from "@/lib/celex";
+import { Composer } from "@/components/composer";
+import { RetrievalTrace, type TraceStep } from "@/components/retrieval-trace";
+import { Sources } from "@/components/sources";
+import { citedCelexIds, linkifyCelexCitations } from "@/lib/celex";
 import { parseSse } from "@/lib/sse";
-import { ExternalLink } from "@/components/external-link";
+import { ExternalLink, SnippetContext } from "@/components/external-link";
 import { AskEmpty } from "@/components/empty-state";
 
 export default function AskView() {
   const [question, setQuestion] = useState("");
   const [phase, setPhase] = useState<string | null>(null);
-  const [searches, setSearches] = useState<string[]>([]);
+  const [searches, setSearches] = useState<TraceStep[]>([]);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Abort any in-flight stream if the component unmounts (e.g. tab switch).
+  // Abort any in-flight stream if the component unmounts (panels stay mounted
+  // across mode switches, so this is leaving the page).
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // celex_id -> first snippet seen across this run's searches.
+  const snippets = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const step of searches)
+      for (const d of step.documents) if (!map.has(d.celex_id)) map.set(d.celex_id, d.snippet);
+    return map;
+  }, [searches]);
 
   const canAsk = question.trim().length > 0 && !busy;
 
@@ -44,7 +55,11 @@ export default function AskView() {
       if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
       for await (const event of parseSse(res)) {
         if (event.type === "status") setPhase(event.data.phase);
-        else if (event.type === "tool") setSearches((s) => [...s, event.data.query]);
+        else if (event.type === "tool")
+          setSearches((s) => [
+            ...s,
+            { query: event.data.query, documents: event.data.documents ?? [] },
+          ]);
         else if (event.type === "token") setAnswer((a) => a + event.data.text);
         else if (event.type === "error") setError(event.data.message);
         else if (event.type === "done") setPhase(null);
@@ -62,37 +77,42 @@ export default function AskView() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <label htmlFor="ask-question" className="field-label">
-          Your question
-        </label>
-        <Textarea
-          id="ask-question"
-          value={question}
-          onChange={(e) => {
-            setQuestion(e.target.value);
-            // A stale failure must not outlive the request it described.
-            if (error) setError(null);
-          }}
-          placeholder="Ask a question about Greek / EU legislation…"
-          rows={3}
-        />
-      </div>
-      <Button onClick={ask} disabled={!canAsk} className="min-h-11">
-        {busy ? "Asking…" : "Ask"}
-      </Button>
+    <div className="space-y-5">
+      <Composer>
+        <div className="space-y-1.5">
+          <label htmlFor="ask-question" className="field-label">
+            Your question
+          </label>
+          <Textarea
+            id="ask-question"
+            value={question}
+            onChange={(e) => {
+              setQuestion(e.target.value);
+              // A stale failure must not outlive the request it described.
+              if (error) setError(null);
+            }}
+            placeholder="Ask a question about Greek / EU legislation…"
+            rows={3}
+          />
+        </div>
+        <Button onClick={ask} disabled={!canAsk} className="min-h-11">
+          {busy ? "Asking…" : "Ask"}
+        </Button>
+      </Composer>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       )}
-      <Activity phase={phase} searches={searches} />
+      <RetrievalTrace steps={searches} phase={phase} writing={answer.length > 0} />
       {answer && (
-        <div className="prose prose-sm max-w-none dark:prose-invert">
-          <Markdown components={{ a: ExternalLink }}>{linkifyCelexCitations(answer)}</Markdown>
+        <div className="prose prose-sm max-w-[66ch] dark:prose-invert">
+          <SnippetContext.Provider value={snippets}>
+            <Markdown components={{ a: ExternalLink }}>{linkifyCelexCitations(answer)}</Markdown>
+          </SnippetContext.Provider>
         </div>
       )}
+      {!busy && answer && <Sources ids={citedCelexIds(answer)} snippets={snippets} />}
       {!busy && !error && !answer && phase === null && <AskEmpty />}
     </div>
   );

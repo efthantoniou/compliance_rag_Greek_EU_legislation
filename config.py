@@ -19,13 +19,19 @@ class Config:
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     reranker_device: str = "cpu"
     max_search_iters: int = 5
-    # Cross-encoder score bands. Scores are sigmoid-squashed to [0, 1].
-    # Measured on this corpus (2026-08-25, n=28): legitimate Greek queries score
-    # 0.75-0.99 at top-1, off-topic and nonsense queries score below 0.08, and
-    # nothing landed in between. `min` drops individual junk results; `weak`
-    # separates a confident answer from one that should carry a caveat.
-    retrieval_min_score: float = 0.10
-    retrieval_weak_score: float = 0.50
+    # Search shows only results whose cross-encoder score (sigmoid-squashed to
+    # [0, 1]) is at least this. Measured on this corpus (2026-08-25, n=28):
+    # legitimate Greek queries score 0.75-0.99 at top-1, off-topic and nonsense
+    # below 0.08; 0.55 also drops the tangential 0.10-0.50 band.
+    retrieval_min_score: float = 0.55
+    # Candidates retrieved and reranked per search query. Pages slice this one
+    # ranked pool, so it also caps how many results a query can return.
+    search_pool: int = 50
+    # Optional separate llama.cpp server for the eval judge. When unset the judge
+    # shares the RAG model, so swapping the RAG model (e.g. Q8_0 -> Q6_K) also
+    # swaps the grader and the two runs' judge scores are not comparable.
+    judge_llamacpp_url: str | None = None
+    judge_llamacpp_model: str | None = None
 
 
 def load_config() -> Config:
@@ -47,6 +53,8 @@ def load_config() -> Config:
         reranker_model=os.environ.get("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"),
         reranker_device=os.environ.get("RERANKER_DEVICE", "cpu"),
         max_search_iters=int(os.environ.get("MAX_SEARCH_ITERS", "5")),
-        retrieval_min_score=float(os.environ.get("RETRIEVAL_MIN_SCORE", "0.10")),
-        retrieval_weak_score=float(os.environ.get("RETRIEVAL_WEAK_SCORE", "0.50")),
+        retrieval_min_score=float(os.environ.get("RETRIEVAL_MIN_SCORE", "0.55")),
+        search_pool=int(os.environ.get("SEARCH_POOL", "50")),
+        judge_llamacpp_url=os.environ.get("JUDGE_LLAMACPP_URL") or None,
+        judge_llamacpp_model=os.environ.get("JUDGE_LLAMACPP_MODEL") or None,
     )

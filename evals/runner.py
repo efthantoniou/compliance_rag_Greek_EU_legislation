@@ -1,88 +1,103 @@
 import asyncio
-import json
-from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
 import click
+from pydantic_evals import increment_eval_metric
+from pydantic_evals.reporting import EvaluationReport, EvaluationReportAdapter
 
 from agent import AgentDeps
-from agent.core.loop import collect_answer_and_sources
+from agent.core.loop import ToolCall, prompted_events
 from config import Config
-from evals.judge import judge_answer
+from evals.dataset import RagOutput, load_ground_truth, new_ground_truth_dataset
+from evals.evaluators import GreekQueries, RagJudge, RetrievalRank
+from evals.judge import judge_model
 
-_SCORE_KEYS = ("factual_correctness", "completeness", "citation_quality", "no_hedging")
+DEFAULT_REPORT_DIR = Path("eval_data/reports")
+
+
+def _make_task(config: Config, deps: AgentDeps):
+    async def answer_question(question: str) -> RagOutput:
+        answer_parts: list[str] = []
+        sources: list[str] = []
+        queries: list[str] = []
+        async for event in prompted_events(config, deps, question, "ask"):
+            if isinstance(event, ToolCall):
+                queries.append(event.query)
+                increment_eval_metric("searches", 1)
+                for cid in event.celex_ids:
+                    if cid not in sources:
+                        sources.append(cid)
+            else:
+                answer_parts.append(event.text)
+        return RagOutput(answer="".join(answer_parts), sources=sources, queries=queries)
+
+    return answer_question
 
 
 def run_eval(
     config: Config,
     embedder,
     ground_truth_path: Path,
-    output_path: Path | None = None,
+    *,
+    name: str | None = None,
     limit: int | None = None,
     rerank: bool = True,
+    repeat: int = 1,
+    baseline_path: Path | None = None,
+    report_dir: Path = DEFAULT_REPORT_DIR,
 ) -> Path:
-    lines = ground_truth_path.read_text(encoding="utf-8").splitlines()
-    qa_pairs = [json.loads(line) for line in lines if line.strip()]
+    dataset = load_ground_truth(ground_truth_path)
     if limit is not None:
-        qa_pairs = qa_pairs[:limit]
-    output_path = output_path or (
-        Path("eval_data") / f"results-{datetime.now().strftime('%Y%m%d-%H%M%S')}.jsonl"
-    )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset = new_ground_truth_dataset(dataset.cases[:limit])
+    dataset.add_evaluator(RetrievalRank())
+    dataset.add_evaluator(GreekQueries())
+    dataset.add_evaluator(RagJudge(config))
 
+    rag_model = Path(config.llamacpp_model).name
+    name = name or (
+        f"{Path(config.llamacpp_model).stem}-{'rerank' if rerank else 'norerank'}"
+        f"-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    )
     deps = AgentDeps(config=config, embedder=embedder, rerank=rerank)
-    results: list[dict] = []
-    with output_path.open("w", encoding="utf-8") as f:
-        for qa in qa_pairs:
-            try:
-                answer, sources = asyncio.run(
-                    collect_answer_and_sources(config, deps, qa["question"], "ask")
-                )
-                judgement = judge_answer(
-                    config, qa["question"], qa["expected_answer"], answer, sources
-                )
-                record = {
-                    "ground_truth_id": qa["id"],
-                    "celex_id": qa["celex_id"],
-                    "difficulty": qa.get("difficulty"),
-                    "question": qa["question"],
-                    "expected_answer": qa["expected_answer"],
-                    "rag_answer": answer,
-                    "rag_sources": sources,
-                    "retrieval_hit": qa["celex_id"] in sources,
-                    "scores": judgement.scores.model_dump(),
-                    "verdict": judgement.verdict,
-                    "notes": judgement.notes,
-                }
-            except Exception as exc:
-                record = {
-                    "ground_truth_id": qa.get("id"),
-                    "question": qa.get("question"),
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            results.append(record)
-            click.echo(
-                f"  {record.get('ground_truth_id')}: "
-                f"{record.get('verdict', record.get('error'))}"
-            )
-    _print_summary(results)
-    return output_path
-
-
-def _print_summary(results: list[dict]) -> None:
-    scored = [r for r in results if "verdict" in r]
-    verdicts = Counter(r["verdict"] for r in scored)
-    click.echo(
-        f"\nTotal: {len(results)}  correct: {verdicts['correct']}  "
-        f"partial: {verdicts['partially_correct']}  "
-        f"incorrect: {verdicts['incorrect']}  errors: {len(results) - len(scored)}"
+    # One local llama.cpp server: running cases concurrently only queues requests
+    # behind each other and skews per-case durations.
+    report = asyncio.run(
+        dataset.evaluate(
+            _make_task(config, deps),
+            name=name,
+            max_concurrency=1,
+            repeat=repeat,
+            metadata={
+                "rag_model": rag_model,
+                "judge_model": Path(judge_model(config)).name,
+                "rerank": rerank,
+                "reranker_device": config.reranker_device,
+                "max_search_iters": config.max_search_iters,
+                "ground_truth": ground_truth_path.name,
+            },
+        )
     )
-    if scored:
-        hit_rate = sum(1 for r in scored if r["retrieval_hit"]) / len(scored)
-        click.echo(f"Retrieval hit rate: {hit_rate:.0%}")
-    for key in _SCORE_KEYS:
-        values = [r["scores"][key] for r in scored if r.get("scores")]
-        if values:
-            click.echo(f"{key} (mean): {sum(values) / len(values):.2f}")
+
+    report_dir.mkdir(parents=True, exist_ok=True)
+    path = report_dir / f"{name}.json"
+    path.write_bytes(EvaluationReportAdapter.dump_json(report, indent=2))
+    print_comparison(report, load_report(baseline_path) if baseline_path else None)
+    return path
+
+
+def load_report(path: Path) -> EvaluationReport:
+    return EvaluationReportAdapter.validate_json(path.read_bytes())
+
+
+def print_comparison(report: EvaluationReport, baseline: EvaluationReport | None = None) -> None:
+    if baseline is not None:
+        judges = [
+            (r.experiment_metadata or {}).get("judge_model") for r in (baseline, report)
+        ]
+        if judges[0] != judges[1]:
+            click.echo(
+                f"WARNING: judge model differs ({judges[0]} → {judges[1]}); judge scores "
+                "are not comparable. Trust only retrieval_hit / hit@1 / reciprocal_rank."
+            )
+    report.print(baseline=baseline, include_averages=True)

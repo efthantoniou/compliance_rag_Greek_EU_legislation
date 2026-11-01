@@ -34,12 +34,22 @@ PLANNER_CHECK = (
     + _GREEK_QUERY_RULE
 )
 
+# Asked only to "cite the celex_id", the model wrote "(celex_id: 32004R2230, ...)",
+# leaking the field name into the answer. The frontend links bare `[id]` tokens.
+_CITATION_RULE = (
+    "Cite a document by putting its celex_id in square brackets, exactly as the "
+    "passages show it, e.g. [32016R0679]; several sources are [32016R0679] "
+    "[32014L0059]. Only the bracketed id: never write the word 'celex_id' or "
+    "'CELEX' before it. Put article or paragraph references after the closing "
+    "bracket, e.g. [32004R2230] άρθρο 3."
+)
+
 WRITER_ASK = (
     "You are a legal research assistant answering a question about Greek and EU "
     "legislation using only the retrieved passages provided in the prompt. Cite the "
     "celex_id of every document you rely on. If the passages contain nothing "
     "relevant, say so explicitly instead of guessing. Answer in the language the "
-    "user asked in."
+    "user asked in.\n\n" + _CITATION_RULE
 )
 
 WRITER_CHECK = (
@@ -48,5 +58,5 @@ WRITER_CHECK = (
     "regulation(s) for each topic in the document, or an explicit 'no relevant "
     "regulation found' note. Cite celex_ids. This report surfaces relevant law "
     "only — never state that the document is or is not compliant. Write the "
-    "report in the language of the submitted document."
+    "report in the language of the submitted document.\n\n" + _CITATION_RULE
 )

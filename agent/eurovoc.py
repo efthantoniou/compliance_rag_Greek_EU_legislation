@@ -7,6 +7,7 @@ English descriptor, so the UI can show names instead of opaque numbers.
 """
 
 import json
+import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
@@ -37,4 +38,11 @@ def concepts(ids: list[str]) -> list[dict]:
 def level_1_options() -> list[dict]:
     """The 21 level-1 domains, resolved and sorted by Greek descriptor."""
     ids = _data()["levels"]["level_1"]
-    return sorted((concept(i) for i in ids), key=lambda c: c["el"])
+    return sorted((concept(i) for i in ids), key=lambda c: _greek_sort_key(c["el"]))
+
+
+def _greek_sort_key(text: str) -> str:
+    # Code-point order puts accented vowels and capitals before plain α; compare
+    # on the bare, case-folded letters instead.
+    decomposed = unicodedata.normalize("NFD", text.casefold())
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))

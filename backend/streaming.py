@@ -20,7 +20,11 @@ async def prompted_sse_events(config, deps, prompt, kind) -> AsyncIterator[str]:
     try:
         async for event in prompted_events(config, deps, prompt, kind):
             if isinstance(event, ToolCall):
-                yield format_sse("tool", {"query": event.query})
+                documents = [
+                    {"celex_id": cid, "snippet": event.snippets.get(cid, "")}
+                    for cid in dict.fromkeys(event.celex_ids)
+                ]
+                yield format_sse("tool", {"query": event.query, "documents": documents})
             elif isinstance(event, Token):
                 yield format_sse("token", {"text": event.text})
         yield format_sse("done", {})

@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import click as _click
 from click.testing import CliRunner
@@ -169,3 +169,45 @@ def test_check_command_reads_file_and_prints_agent_output(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "Topic: data processing" in result.output
+
+
+def test_eval_run_passes_options_through(tmp_path):
+    runner = CliRunner()
+    gt = tmp_path / "gt.yaml"
+    gt.write_text("cases: []\n", encoding="utf-8")
+    baseline = tmp_path / "q8.json"
+    baseline.write_text("{}", encoding="utf-8")
+
+    with patch("main.load_config", return_value=_fake_config()), \
+         patch("main._check_llamacpp_reachable"), \
+         patch("main.Embedder"), \
+         patch("main.run_eval", return_value=tmp_path / "q6.json") as run_eval:
+        result = runner.invoke(cli, [
+            "eval-run", "--ground-truth", str(gt), "--name", "q6", "--repeat", "3",
+            "--baseline", str(baseline), "--no-rerank", "--limit", "4",
+        ])
+
+    assert result.exit_code == 0, result.output
+    kwargs = run_eval.call_args.kwargs
+    assert kwargs["name"] == "q6"
+    assert kwargs["repeat"] == 3
+    assert kwargs["baseline_path"] == baseline
+    assert kwargs["rerank"] is False
+    assert kwargs["limit"] == 4
+    assert "q6.json" in result.output
+
+
+def test_eval_compare_prints_report_against_baseline(tmp_path):
+    runner = CliRunner()
+    report_path = tmp_path / "q6.json"
+    baseline_path = tmp_path / "q8.json"
+    report_path.write_text("{}", encoding="utf-8")
+    baseline_path.write_text("{}", encoding="utf-8")
+    loaded = {report_path: "q6-report", baseline_path: "q8-report"}
+
+    with patch("main.load_report", side_effect=lambda p: loaded[p]), \
+         patch("main.print_comparison") as print_comparison:
+        result = runner.invoke(cli, ["eval-compare", str(report_path), str(baseline_path)])
+
+    assert result.exit_code == 0, result.output
+    print_comparison.assert_called_once_with("q6-report", "q8-report")

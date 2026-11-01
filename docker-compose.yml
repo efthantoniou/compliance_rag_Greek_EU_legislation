@@ -48,6 +48,12 @@ services:
       # reranking drops from ~5.8 s to ~80 ms per search.
       RERANKER_DEVICE: cuda
       LOGFIRE_TOKEN: ${LOGFIRE_TOKEN:-}
+      # Search: keep results scoring >= this, reranking this many candidates per query.
+      RETRIEVAL_MIN_SCORE: ${RETRIEVAL_MIN_SCORE:-0.55}
+      SEARCH_POOL: ${SEARCH_POOL:-50}
+      # Optional pinned eval judge (see .env.docker.example); empty = judge with the RAG model.
+      JUDGE_LLAMACPP_URL: ${JUDGE_LLAMACPP_URL:-}
+      JUDGE_LLAMACPP_MODEL: ${JUDGE_LLAMACPP_MODEL:-}
     volumes:
       - ${HF_CACHE_DIR}:/hf-cache
     ports:

@@ -243,3 +243,65 @@ async def test_prompted_sse_sanitizes_errors(monkeypatch):
     joined = "".join(frames)
     assert "event: error" in joined
     assert "secret internals" not in joined
+
+
+def test_writer_prompts_specify_bracketed_citation_format():
+    # Without an explicit format the model wrote "(celex_id: 32004R2230, ...)",
+    # leaking the field name into the answer. The frontend links `[id]` only.
+    from agent.core import prompts
+
+    for prompt in (prompts.WRITER_ASK, prompts.WRITER_CHECK):
+        assert "[32016R0679]" in prompt
+        assert "never write the word" in prompt
+        # It also put paragraph refs inside the brackets: "[32004R2230 (παρ. 1)]".
+        assert "after the closing bracket" in prompt
+
+
+@pytest.mark.anyio
+async def test_loop_tool_call_carries_one_snippet_per_document():
+    # The UI previews a cited document; the first (best-ranked) chunk per
+    # document is the snippet, trimmed so the stream stays small.
+    from agent.core.loop import SNIPPET_CHARS, ToolCall, run_prompted
+
+    planner = _FakePlanner([SearchAction(query="q1", top_k=3), Done()])
+    writer = _FakeWriter(["ok"])
+    long_text = "λ" * (SNIPPET_CHARS + 50)
+
+    def search_fn(q, k):
+        return [_Chunk("A1", long_text), _Chunk("B2", "δεύτερο"), _Chunk("A1", "later chunk")]
+
+    events = await _drain(run_prompted(planner, writer, search_fn, "q", max_search_iters=5))
+    (call,) = [e for e in events if isinstance(e, ToolCall)]
+    assert call.snippets == {"A1": "λ" * SNIPPET_CHARS + "…", "B2": "δεύτερο"}
+
+
+@pytest.mark.anyio
+async def test_prompted_sse_tool_frame_lists_documents_with_snippets(monkeypatch):
+    import json
+
+    import backend.streaming as streaming_mod
+
+    async def fake_events(config, deps, user_prompt, kind):
+        from agent.core.loop import ToolCall
+
+        yield ToolCall(
+            query="q", celex_ids=["A1", "B2", "A1"], snippets={"A1": "πρώτο", "B2": "δεύτερο"}
+        )
+
+    monkeypatch.setattr(streaming_mod, "prompted_events", fake_events)
+
+    frames = [
+        f
+        async for f in streaming_mod.prompted_sse_events(
+            config=object(), deps=object(), prompt="u", kind="ask"
+        )
+    ]
+    (tool,) = [f for f in frames if f.startswith("event: tool")]
+    data = json.loads(tool.split("data: ", 1)[1])
+    assert data == {
+        "query": "q",
+        "documents": [
+            {"celex_id": "A1", "snippet": "πρώτο"},
+            {"celex_id": "B2", "snippet": "δεύτερο"},
+        ],
+    }

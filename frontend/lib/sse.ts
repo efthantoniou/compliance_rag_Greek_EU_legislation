@@ -1,6 +1,8 @@
+export type RetrievedDocument = { celex_id: string; snippet: string };
+
 export type SseEvent =
   | { type: "status"; data: { phase: string } }
-  | { type: "tool"; data: { query: string } }
+  | { type: "tool"; data: { query: string; documents?: RetrievedDocument[] } }
   | { type: "token"; data: { text: string } }
   | { type: "error"; data: { message: string } }
   | { type: "done"; data: Record<string, never> };

@@ -71,28 +71,25 @@ def search(
     return chunks
 
 
-def search_scored(
+def rank_pool(
     config: Config,
     embedder: Embedder,
     query: str,
-    top_k: int = 5,
+    pool: int,
     label_filter: str | None = None,
-    rerank: bool = True,
-) -> list[tuple[Chunk, float | None]]:
-    """As search(), but each chunk carries its cross-encoder score.
-
-    The score is None when reranking is disabled — there is no cross-encoder
-    pass to produce one, and callers must not mistake that for a score of zero.
+) -> list[tuple[Chunk, float]]:
+    """The `pool` best candidates for a query, every one cross-encoder scored,
+    best first. Search paginates by slicing this list, so all pages of a query
+    share one deterministic order (and the pool caps how deep paging goes).
     """
-    chunks = _candidates(config, embedder, query, top_k, label_filter, rerank)
-    if not rerank:
-        return [(chunk, None) for chunk in chunks]
-    return list(
-        rerank_chunks_scored(
-            query,
-            chunks,
-            top_n=top_k,
-            model_name=config.reranker_model,
-            device=config.reranker_device,
-        )
+    query_embedding = embedder.embed_query(query)
+    vector_rows = vector_search(config, query_embedding, top_k=pool, label_filter=label_filter)
+    fts_rows = fts_search(config, query, top_k=pool, label_filter=label_filter)
+    chunks = [_row_to_chunk(row) for row in _rrf_fuse([vector_rows, fts_rows], pool)]
+    return rerank_chunks_scored(
+        query,
+        chunks,
+        top_n=pool,
+        model_name=config.reranker_model,
+        device=config.reranker_device,
     )

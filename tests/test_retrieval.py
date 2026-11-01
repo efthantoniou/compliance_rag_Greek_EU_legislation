@@ -66,3 +66,25 @@ def test_search_reranks_when_enabled():
     kwargs = mock_rerank.call_args.kwargs
     assert kwargs["top_n"] == 1
     assert kwargs["model_name"] == "m"
+
+
+def test_rank_pool_reranks_every_candidate_once():
+    # Search pagination slices one ranked pool, so every page of a query sees
+    # the same order: fetch `pool` from each index, fuse, rerank all of it.
+    from agent.retrieval.search import rank_pool
+
+    config = MagicMock()
+    config.reranker_model = "m"
+    config.reranker_device = "cpu"
+    rows = [_row("c:1", "alpha"), _row("c:2", "beta")]
+    scored = [(Chunk(text="beta", celex_id="A1", labels=[]), 0.9)]
+    with patch("agent.retrieval.search.vector_search", return_value=rows) as mock_vec, \
+         patch("agent.retrieval.search.fts_search", return_value=[]) as mock_fts, \
+         patch("agent.retrieval.search.rerank_chunks_scored", return_value=scored) as mock_rerank:
+        result = rank_pool(config, _FakeEmbedder(), "φόροι", pool=50, label_filter="100149")
+
+    assert result == scored
+    mock_vec.assert_called_once_with(config, [0.1, 0.2], top_k=50, label_filter="100149")
+    mock_fts.assert_called_once_with(config, "φόροι", top_k=50, label_filter="100149")
+    assert mock_rerank.call_args.kwargs["top_n"] == 50
+    assert [c.text for c in mock_rerank.call_args.args[1]] == ["alpha", "beta"]

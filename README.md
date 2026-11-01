@@ -22,8 +22,11 @@ locally.
   closest matching regulation(s) for each. It surfaces relevant law only — it never
   declares a document compliant or non-compliant.
 - **Search** — raw hybrid retrieval, no LLM, for inspecting what the index returns.
+  Only passages the reranker scores at **0.55 or higher** count. Each document is shown
+  **once**, with its best passage and how many of its passages matched, best first, **10
+  per page**; a query with nothing above the bar gets an explicit refusal.
 - **Evaluate** — generate ground-truth Q&A from the corpus and score the RAG against
-  it, including a deterministic retrieval-hit-rate metric.
+  it with deterministic retrieval metrics, and diff runs against a baseline.
 
 ### How retrieval works
 
@@ -83,7 +86,7 @@ agent/
   eurovoc_descriptors.json # bundled level_1/2/3 descriptor lookup
 backend/                  # FastAPI app: routes, SSE streaming, schemas
 mcp_server/               # MCP server exposing the backend as tools (search/ask/check/labels/health)
-evals/                    # ground-truth generation + LLM judge + eval runner
+evals/                    # pydantic-evals dataset, evaluators, LLM judge, runner
 frontend/                 # Next.js UI
 tests/                    # pytest suite (unit + integration + backend)
 ```
@@ -130,6 +133,8 @@ Edit `.env.docker` and set the paths for your machine:
 | `LOGFIRE_TOKEN`       | no       | Send agent traces to Logfire; otherwise they print to backend logs. |
 | `RERANKER_MODEL`      | no       | Cross-encoder model (default `BAAI/bge-reranker-v2-m3`).           |
 | `RERANKER_DEVICE`     | no       | `cpu` (default) or `cuda` if you have VRAM headroom next to llama. |
+| `RETRIEVAL_MIN_SCORE` | no       | Search keeps results scoring at least this (default `0.55`, range 0–1). |
+| `SEARCH_POOL`         | no       | Candidates reranked per search query, which caps the result count (default `50`). |
 
 ### 2. Ingest the corpus
 
@@ -182,7 +187,8 @@ python main.py search "φορολογία ακινήτων"     # raw hybrid ret
 python main.py ask "Ποιες είναι οι υποχρεώσεις;"  # agent answer with citations
 python main.py check policy.txt                # surface relevant law for a document
 python main.py eval-generate --sample 5 --seed 42   # make ground-truth Q&A
-python main.py eval-run [--no-rerank]          # run RAG + judge; prints metrics
+python main.py eval-run [--no-rerank] [--name N] [--baseline R]  # run RAG + judge, save report
+python main.py eval-compare REPORT BASELINE    # diff two saved reports
 ```
 
 `ingest` calls `init-db` internally, so a standalone `init-db` is only needed to
@@ -193,25 +199,63 @@ populated.
 
 ## Evaluation
 
-The eval harness is fully local — the same llama.cpp model both generates ground-truth
-Q&A and judges answers.
+The eval harness is built on [pydantic-evals](https://pydantic.dev/docs/ai/evals/evals/)
+and is fully local: by default the same llama.cpp model generates ground truth,
+answers, and judges.
 
 ```bash
 # 1. Generate ground truth from ingested documents
 python main.py eval-generate --sample 5 --seed 42
-#    → writes eval_data/ground_truth.jsonl
+#    → writes eval_data/ground_truth.yaml (+ a JSON schema for editor autocomplete);
+#      hand-edit it to fix or add cases. A legacy ground_truth.jsonl still loads.
 
-# 2. Run the RAG against it and score each answer
-python main.py eval-run
-#    → prints verdicts, mean scores, and retrieval hit rate; writes eval_data/results-*.jsonl
+# 2. Run the RAG against it and score each case
+python main.py eval-run --name q6-rerank
+#    → prints a per-case table and averages; saves eval_data/reports/q6-rerank.json
 
-# 3. Compare hybrid+rerank vs. hybrid-only to quantify the reranker
-python main.py eval-run --no-rerank
+# 3. Compare against a baseline — another config, or a saved earlier run
+python main.py eval-run --name q6-norerank --no-rerank --baseline eval_data/reports/q6-rerank.json
+python main.py eval-compare eval_data/reports/q6-rerank.json eval_data/reports/q8-rerank.json
+
+# Run each case N times to see whether a difference is real or run-to-run noise
+python main.py eval-run --name q6-rerank-x3 --repeat 3
 ```
 
-`retrieval_hit` (did the ground-truth document's `celex_id` appear in a tool result?)
-is deterministic and doesn't depend on the local judge's quality — the most reliable
-number to track.
+Per case it reports:
+
+| Kind | Name | Source |
+|------|------|--------|
+| assertion | `retrieval_hit`, `hit@1` | ground-truth `celex_id` among / first in retrieved sources |
+| score | `reciprocal_rank` | 1 / rank of the ground-truth document (0 if missed) |
+| assertion | `greek_queries` | every planner search query is Greek script (the corpus and reranker are Greek-only) |
+| score | `factual_correctness`, `completeness`, `citation_quality`, `no_hedging` | LLM judge |
+| label | `verdict` | LLM judge (`correct` / `partially_correct` / `incorrect`, notes as reason) |
+| metric | `searches`, `requests`, tokens | planner searches; model usage recorded by pydantic-ai |
+
+The retrieval and `greek_queries` checks are deterministic and don't depend on the
+local judge's quality — the most reliable numbers to track. Each report stores the
+run settings (`rag_model`, `judge_model`, `rerank`, `reranker_device`, …), and the
+diff header shows what changed between two runs.
+
+**Comparing RAG models (e.g. Q8_0 vs Q6_K).** llama.cpp serves one model at a time, so
+run one, swap `LLAMACPP_MODEL_FILE` and restart `llama`, run the other with
+`--baseline` (or diff afterwards with `eval-compare`). Unless `JUDGE_LLAMACPP_URL` /
+`JUDGE_LLAMACPP_MODEL` point at a separate, fixed judge server, the judge swaps along
+with the RAG model; the comparison then warns that judge scores are not comparable,
+and only the deterministic checks should be trusted.
+
+**In Docker**, the backend image has no `eval_data` volume, so mount one (as your
+user, so files aren't root-owned) and the current source:
+
+```bash
+docker compose --env-file .env.docker run --rm --no-deps --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e USER=eval -v "$PWD/eval_data:/app/eval_data" \
+  backend python main.py eval-run --name q6-rerank
+```
+
+Rebuild `backend` first if you changed code. The eval container loads its own copy of
+the embedder and reranker; add `-e RERANKER_DEVICE=cpu -e CUDA_VISIBLE_DEVICES=` if
+the GPU has no headroom next to the running backend.
 
 ---
 

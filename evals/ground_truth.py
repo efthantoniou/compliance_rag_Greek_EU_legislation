@@ -1,12 +1,12 @@
-import json
 import random
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
+from pydantic_evals import Case
 
 from config import Config
+from evals.dataset import GroundTruthMeta, new_ground_truth_dataset
 from evals.llm import build_structured_agent
 from agent.storage.surreal import chunks_by_celex, list_celex_ids
 
@@ -54,7 +54,7 @@ def generate_ground_truth(
     config: Config,
     sample_size: int = 5,
     questions_per_doc: int = 3,
-    output_path: Path = Path("eval_data/ground_truth.jsonl"),
+    output_path: Path = Path("eval_data/ground_truth.yaml"),
     seed: int | None = None,
 ) -> int:
     if seed is not None:
@@ -64,33 +64,30 @@ def generate_ground_truth(
         celex_ids = random.sample(celex_ids, sample_size)
 
     agent = build_structured_agent(config, GENERATOR_INSTRUCTIONS, GroundTruthBatch)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    generated_at = datetime.now(timezone.utc).isoformat()
-    written = 0
-    with output_path.open("w", encoding="utf-8") as f:
-        for celex_id in celex_ids:
-            document_text = gather_document_text(config, celex_id)
-            if not document_text:
-                continue
-            prompt = (
-                f"Παρακάτω είναι απόσπασμα του εγγράφου CELEX {celex_id}. "
-                f"Παρήγαγε ακριβώς {questions_per_doc} ερωτοαπαντήσεις.\n\n"
-                f"Κείμενο:\n{document_text}"
+    cases: list[Case] = []
+    for celex_id in celex_ids:
+        document_text = gather_document_text(config, celex_id)
+        if not document_text:
+            continue
+        prompt = (
+            f"Παρακάτω είναι απόσπασμα του εγγράφου CELEX {celex_id}. "
+            f"Παρήγαγε ακριβώς {questions_per_doc} ερωτοαπαντήσεις.\n\n"
+            f"Κείμενο:\n{document_text}"
+        )
+        try:
+            batch = agent.run_sync(prompt).output
+        except Exception as exc:
+            print(f"skip {celex_id}: {type(exc).__name__}: {exc}")
+            continue
+        for i, qa in enumerate(batch.questions, start=1):
+            cases.append(
+                Case(
+                    name=f"{celex_id}-{i}",
+                    inputs=qa.question,
+                    expected_output=qa.expected_answer,
+                    metadata=GroundTruthMeta(celex_id=celex_id, difficulty=qa.difficulty),
+                )
             )
-            try:
-                batch = agent.run_sync(prompt).output
-            except Exception as exc:
-                print(f"skip {celex_id}: {type(exc).__name__}: {exc}")
-                continue
-            for i, qa in enumerate(batch.questions, start=1):
-                record = {
-                    "id": f"{celex_id}-{i}",
-                    "celex_id": celex_id,
-                    "question": qa.question,
-                    "expected_answer": qa.expected_answer,
-                    "difficulty": qa.difficulty,
-                    "generated_at": generated_at,
-                }
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
-                written += 1
-    return written
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    new_ground_truth_dataset(cases).to_file(output_path)
+    return len(cases)

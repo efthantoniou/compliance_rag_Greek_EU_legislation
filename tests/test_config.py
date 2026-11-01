@@ -55,3 +55,21 @@ def test_max_search_iters_from_env(monkeypatch):
     monkeypatch.setenv("MAX_SEARCH_ITERS", "8")
     cfg = load_config()
     assert cfg.max_search_iters == 8
+
+
+def test_judge_endpoint_defaults_to_unset(monkeypatch):
+    monkeypatch.setenv("LLAMACPP_MODEL", "test-model")
+    monkeypatch.delenv("JUDGE_LLAMACPP_URL", raising=False)
+    monkeypatch.delenv("JUDGE_LLAMACPP_MODEL", raising=False)
+    cfg = load_config()
+    assert cfg.judge_llamacpp_url is None
+    assert cfg.judge_llamacpp_model is None
+
+
+def test_judge_endpoint_from_env(monkeypatch):
+    monkeypatch.setenv("LLAMACPP_MODEL", "test-model")
+    monkeypatch.setenv("JUDGE_LLAMACPP_URL", "http://judge:8081/v1")
+    monkeypatch.setenv("JUDGE_LLAMACPP_MODEL", "judge-model")
+    cfg = load_config()
+    assert cfg.judge_llamacpp_url == "http://judge:8081/v1"
+    assert cfg.judge_llamacpp_model == "judge-model"

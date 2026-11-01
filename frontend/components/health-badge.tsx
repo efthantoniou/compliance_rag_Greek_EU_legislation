@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { healthSummary } from "@/lib/display";
+import { cn } from "@/lib/utils";
 
 export type Health = { surrealdb: boolean; llamacpp: boolean };
 
@@ -55,10 +56,23 @@ export function HealthBadge() {
   }, []);
 
   if (!health) return null;
-  const ok = health.surrealdb && health.llamacpp;
+  const { ok, text } = healthSummary(health);
   return (
-    <Badge variant={ok ? "secondary" : "destructive"}>
-      {health.surrealdb ? "DB ✓" : "DB ✗"} · {health.llamacpp ? "LLM ✓" : "LLM ✗"}
-    </Badge>
+    <span
+      role="status"
+      title={`Database ${health.surrealdb ? "connected" : "unreachable"}, model ${health.llamacpp ? "loaded" : "unreachable"}`}
+      className={cn(
+        "inline-flex items-center gap-1.5 font-ui text-[13px]",
+        ok ? "text-muted-foreground" : "text-destructive"
+      )}
+    >
+      {/* While healthy, a soft ring breathes out from the dot; it stops (and the
+          dot turns red) the moment a service goes down, so the change reads. */}
+      <span aria-hidden className="relative inline-flex size-1.5">
+        {ok && <span className="motion-halo absolute inset-0 rounded-full bg-ok" />}
+        <span className={cn("relative size-1.5 rounded-full", ok ? "bg-ok" : "bg-destructive")} />
+      </span>
+      {text}
+    </span>
   );
 }

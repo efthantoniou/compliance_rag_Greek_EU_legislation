@@ -28,6 +28,8 @@
   --color-source-quiet: var(--source-quiet);
   --color-uncertain: var(--uncertain);
   --color-uncertain-quiet: var(--uncertain-quiet);
+  --color-ok: var(--ok);
+  --color-raised: var(--raised);
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -101,6 +103,10 @@
   /* Weak retrieval and refusal. Amber, never red — refusing is correct. */
   --uncertain: oklch(0.62 0.110 65);
   --uncertain-quiet: oklch(0.95 0.035 65);
+  /* System health only (the status dot). */
+  --ok: oklch(0.56 0.12 150);
+  /* A selected control sitting on a muted track: always lighter than the track. */
+  --raised: oklch(1 0 0);
 
   --border: oklch(0.90 0.006 85);
   --input: oklch(0.90 0.006 85);
@@ -126,7 +132,67 @@
 
 /* Not an inversion. Surfaces are rebuilt on a deep ink ground, and accent
    chroma drops while lightness rises so petrol stays a signal, not a glow. */
+/* Native controls (select, scrollbars, autofill) follow the active theme. */
+:root {
+  color-scheme: light;
+  /* Lets height transition to/from `auto` (expand/collapse) where supported;
+     elsewhere it simply snaps. */
+  interpolate-size: allow-keywords;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --motion-fast: 160ms;
+  --motion-base: 240ms;
+  --motion-slow: 360ms;
+}
+
+@keyframes trace-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes status-halo {
+  from {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(3);
+  }
+}
+
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .dark {
+  color-scheme: dark;
   --background: oklch(0.18 0.012 250);
   --foreground: oklch(0.93 0.005 85);
 
@@ -150,6 +216,8 @@
   --source-quiet: oklch(0.28 0.030 195);
   --uncertain: oklch(0.75 0.100 65);
   --uncertain-quiet: oklch(0.30 0.040 65);
+  --ok: oklch(0.74 0.13 150);
+  --raised: oklch(0.34 0.014 250);
 
   --border: oklch(0.30 0.012 250);
   --input: oklch(0.30 0.012 250);
@@ -203,19 +271,35 @@
 }
 
 @layer components {
-  /* DESIGN.md `label` token: 11 / 1.40, weight 600, .09em tracking, uppercase,
-     Plex Sans. Used for the visible field labels the app previously did
-     without — every input relied on a placeholder that vanished on input.
+  /* DESIGN.md `label` token: 13 / 1.40, weight 500, Plex Sans, sentence case.
+     (Was tracked uppercase; sentence case reads as a label without shouting.)
      Written as plain CSS: @apply inside @layer components is dropped in
      Tailwind v4, which silently left this class undefined. */
   .field-label {
     display: block;
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1.4;
-    font-weight: 600;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
+    font-weight: 500;
     color: var(--muted-foreground);
+  }
+
+  /* DESIGN.md Motion. Things move only when the user did something or when
+     retrieval makes progress; nothing animates on page load. */
+  .motion-trace-in {
+    animation: trace-in var(--motion-base) var(--ease-out) both;
+  }
+  .motion-settle {
+    animation: settle var(--motion-slow) var(--ease-out) both;
+  }
+  .motion-fade {
+    animation: fade-in var(--motion-fast) var(--ease-out) both;
+  }
+  .motion-pulse {
+    animation: pulse-dot 1.4s ease-in-out infinite;
+  }
+  /* The one ambient animation (status dot), by explicit request; see DESIGN.md. */
+  .motion-halo {
+    animation: status-halo 2.4s var(--ease-out) infinite;
   }
 }

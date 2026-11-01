@@ -73,15 +73,10 @@ export function Coverage({ domains }: { domains: Concept[] }) {
   return (
     <div className="mt-5 border-t border-border pt-4">
       <p className="field-label">
-        Corpus coverage — {domains.length} EUROVOC domains
+        The corpus covers {domains.length} EUROVOC domains
       </p>
       <p className="mt-2 max-w-[66ch] font-ui text-[13px] leading-[1.65] text-muted-foreground">
-        {domains.map((d, i) => (
-          <span key={d.id}>
-            {i > 0 && <span aria-hidden="true"> · </span>}
-            {d.el.toLowerCase()}
-          </span>
-        ))}
+        {domains.map((d) => d.el).join(", ")}
       </p>
     </div>
   );
@@ -131,14 +126,14 @@ export function SearchNoResults({
       <p className="mt-3 max-w-[66ch] text-sm text-muted-foreground">
         {filtered
           ? "Widen the filter to all domains, or try broader wording."
-          : "The corpus is bounded — it covers the domains below and nothing outside them. Try broader wording, or a term closer to the legislative vocabulary."}
+          : "The corpus covers only the domains below. Try broader wording, or a term closer to the legislative vocabulary."}
       </p>
       {/* The trace that justifies the refusal. DESIGN.md: refusing is correct
           behaviour, so show the working rather than hiding it. */}
       {typeof topScore === "number" && typeof threshold === "number" && (
         <p className="mt-4 font-mono text-[11px] leading-[1.9] text-muted-foreground">
-          best match {topScore.toFixed(4)} · threshold {threshold.toFixed(2)} ·
-          declined
+          best match {topScore.toFixed(4)}, below the {threshold.toFixed(2)} threshold, so
+          nothing is shown
         </p>
       )}
       <Coverage domains={domains} />
@@ -159,7 +154,7 @@ export function NotGreekNotice({ onGoToAsk }: { onGoToAsk?: () => void }) {
         query retrieves nothing regardless of how well it is phrased.
       </p>
       <p className="mt-3 max-w-[66ch] text-sm text-muted-foreground">
-        Rewrite the query in Greek — mixed terms are fine, so{" "}
+        Rewrite the query in Greek. Mixed terms are fine, so{" "}
         <span className="font-mono text-[0.9em]">GDPR προστασία δεδομένων</span>{" "}
         works. Transliteration does not:{" "}
         <span className="font-mono text-[0.9em]">prostasia dedomenon</span> finds
@@ -211,28 +206,6 @@ export function CelexShortcut({ id }: { id: string }) {
   );
 }
 
-/** Retrieval succeeded but the best match was mediocre. Caveat, never hidden. */
-export function WeakRetrievalNotice({
-  topScore,
-  threshold,
-}: {
-  topScore: number;
-  threshold: number;
-}) {
-  return (
-    <div className="rounded-sm border border-uncertain/40 bg-uncertain-quiet px-4 py-3">
-      <p className="field-label text-uncertain">◆ Weak match</p>
-      <p className="mt-1.5 max-w-[66ch] text-sm">
-        Nothing in the corpus matched this query strongly. The passages below
-        are the closest available and may not answer it.
-      </p>
-      <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-        best match {topScore.toFixed(4)} · confident above {threshold.toFixed(2)}
-      </p>
-    </div>
-  );
-}
-
 export function AskEmpty() {
   return (
     <Shell
@@ -254,8 +227,8 @@ export function CheckEmpty() {
       headline="Paste a policy document, or upload a .txt file. Each topic found in the document is matched against the regulations that govern it."
     >
       <p className="mt-3 max-w-[66ch] text-sm text-muted-foreground">
-        Longer documents take longer — every extracted topic runs its own
-        retrieval pass.
+        Longer documents take longer, because every topic found gets its own
+        search.
       </p>
     </Shell>
   );

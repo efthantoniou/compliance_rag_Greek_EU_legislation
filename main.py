@@ -19,7 +19,7 @@ from agent.storage.surreal import (
 )
 from config import load_config
 from evals.ground_truth import generate_ground_truth
-from evals.runner import run_eval
+from evals.runner import load_report, print_comparison, run_eval
 
 
 @click.group()
@@ -123,7 +123,7 @@ def ask(question):
 @click.option("--sample", default=5, type=int, help="Number of documents to sample.")
 @click.option("--questions", default=3, type=int, help="Q&A pairs per document.")
 @click.option("--seed", default=None, type=int, help="Random seed for reproducible sampling.")
-@click.option("--output", default="eval_data/ground_truth.jsonl", type=click.Path(dir_okay=False))
+@click.option("--output", default="eval_data/ground_truth.yaml", type=click.Path(dir_okay=False))
 def eval_generate(sample, questions, seed, output):
     config = load_config()
     _check_llamacpp_reachable(config)
@@ -138,17 +138,41 @@ def eval_generate(sample, questions, seed, output):
 
 
 @cli.command(name="eval-run")
-@click.option("--ground-truth", default="eval_data/ground_truth.jsonl",
-              type=click.Path(exists=True, dir_okay=False))
-@click.option("--limit", default=None, type=int, help="Evaluate only the first N pairs.")
+@click.option("--ground-truth", default="eval_data/ground_truth.yaml",
+              type=click.Path(exists=True, dir_okay=False),
+              help="Dataset YAML/JSON (a legacy ground_truth.jsonl also loads).")
+@click.option("--limit", default=None, type=int, help="Evaluate only the first N cases.")
 @click.option("--no-rerank", is_flag=True, default=False,
               help="Disable cross-encoder reranking (hybrid-only baseline).")
-def eval_run(ground_truth, limit, no_rerank):
+@click.option("--name", default=None,
+              help="Experiment name; the report is saved as eval_data/reports/<name>.json.")
+@click.option("--repeat", default=1, type=int,
+              help="Run each case N times to see run-to-run noise.")
+@click.option("--baseline", default=None, type=click.Path(exists=True, dir_okay=False),
+              help="Saved report to diff this run against.")
+def eval_run(ground_truth, limit, no_rerank, name, repeat, baseline):
     config = load_config()
     _check_llamacpp_reachable(config)
     embedder = Embedder.from_pretrained()
-    path = run_eval(config, embedder, Path(ground_truth), limit=limit, rerank=not no_rerank)
-    click.echo(f"Results written to {path}")
+    path = run_eval(
+        config,
+        embedder,
+        Path(ground_truth),
+        name=name,
+        limit=limit,
+        rerank=not no_rerank,
+        repeat=repeat,
+        baseline_path=Path(baseline) if baseline else None,
+    )
+    click.echo(f"Report saved to {path}")
+
+
+@cli.command(name="eval-compare")
+@click.argument("report", type=click.Path(exists=True, dir_okay=False))
+@click.argument("baseline", type=click.Path(exists=True, dir_okay=False))
+def eval_compare(report, baseline):
+    """Diff two saved reports, e.g. a Q6_K run against a Q8_0 baseline."""
+    print_comparison(load_report(Path(report)), load_report(Path(baseline)))
 
 
 @cli.command()
